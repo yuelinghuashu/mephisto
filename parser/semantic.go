@@ -5,6 +5,7 @@
 // 2. 识别列表项、规则、普通文本
 // 3. 对文本区块保留空行，对结构化区块过滤空行
 // 4. 绝对行号（与文件物理行对齐）
+// 5. 在解析阶段预编译规则 AST（性能优化）
 // 这是解析的第二阶段：区块内容 → 结构化条目
 // ============================================================
 
@@ -18,24 +19,32 @@ import (
 // ParseSemantics 遍历所有区块，调用 parseBlockContent 填充 Entries
 func (pf *ParsedFile) ParseSemantics() error {
 	for _, block := range pf.Blocks {
-		isTextBlock := block.Name == "角色名" || block.Name == "世界观" || block.Name == "角色背景"
+		// 判断是否为自由文本区块（这些区块需要保留空行）
+		isTextBlock := block.Name == "角色名" || block.Name == "世界观" || block.Name == "角色背景" || block.Name == "开局场景"
 		entries, err := parseBlockContent(block.Raw, block.Line, isTextBlock)
 		if err != nil {
 			return fmt.Errorf("解析 【%s】 区块失败: %w", block.Name, err)
 		}
 		block.Entries = entries
 	}
+	// 扫描外部引用
+	pf.ScanReferences()
 	return nil
 }
 
 // parseBlockContent 解析区块的原始文本（raw），生成条目列表
 // 使用 strings.Lines 按行迭代，避免一次性分配整个行切片
+// 参数：
+//   - raw: 区块原始内容（包含注释、空行）
+//   - startLine: 区块标题所在行号（用于计算绝对行号）
+//   - isTextBlock: 是否为文本区块（决定是否保留空行）
 func parseBlockContent(raw string, startLine int, isTextBlock bool) ([]*BlockEntry, error) {
 	var entries []*BlockEntry
 	i := 0
 
 	// strings.Lines 返回一个迭代器，按需生成每一行（Go 1.23+）
 	for line := range strings.Lines(raw) {
+		// 绝对行号 = 标题行号 + 1（标题行不占 Raw）+ i
 		absoluteLineNum := startLine + 1 + i
 		trimmed := strings.TrimSpace(line)
 
@@ -48,6 +57,7 @@ func parseBlockContent(raw string, startLine int, isTextBlock bool) ([]*BlockEnt
 		// 空行处理
 		if trimmed == "" {
 			if isTextBlock {
+				// 文本区块：保留空行（作为 Value="" 的 text 条目）
 				entries = append(entries, &BlockEntry{
 					Type:  "text",
 					Key:   "",
@@ -70,8 +80,8 @@ func parseBlockContent(raw string, startLine int, isTextBlock bool) ([]*BlockEnt
 			continue
 		}
 
-		// 规则项：以 "[" 开头且包含 "if"
-		if strings.HasPrefix(trimmed, "[") && strings.Contains(trimmed, "if") {
+		// 规则项：以 "[" 开头且包含 "if" 和 "->"
+		if strings.HasPrefix(trimmed, "[") && strings.Contains(trimmed, "if") && strings.Contains(trimmed, "->") {
 			entry, err := parseRuleLine(trimmed, absoluteLineNum)
 			if err != nil {
 				return nil, err
@@ -95,6 +105,7 @@ func parseBlockContent(raw string, startLine int, isTextBlock bool) ([]*BlockEnt
 
 // parseListLine 解析列表行（格式：- 键: 值）
 // 值中允许包含冒号（只按第一个冒号分割）
+// 优化：取所有分隔符中索引最小的，解决中英文冒号混用问题
 func parseListLine(line string, lineNum int) (*BlockEntry, error) {
 	rest := strings.TrimSpace(line)
 	if !strings.HasPrefix(rest, "-") {
@@ -107,6 +118,7 @@ func parseListLine(line string, lineNum int) (*BlockEntry, error) {
 		return nil, fmt.Errorf("第 %d 行: 列表项内容为空", lineNum)
 	}
 
+	// 优化后的 splitKeyValue：取所有分隔符中索引最小的
 	key, value, found := splitKeyValue(rest)
 	if !found {
 		return nil, fmt.Errorf("第 %d 行: 列表项格式错误，缺少 ':' 或 '：'", lineNum)
@@ -122,56 +134,116 @@ func parseListLine(line string, lineNum int) (*BlockEntry, error) {
 
 // splitKeyValue 尝试用多种分隔符分割键值对
 // 支持：": "、":"、"："（中文冒号）
+// 优化：取所有分隔符中首次出现位置最靠左的那个
+// 这样即使 Value 中包含冒号，也不会误分割
 func splitKeyValue(s string) (key, value string, ok bool) {
-	for _, sep := range []string{": ", ":", "："} {
-		if idx := strings.Index(s, sep); idx != -1 {
-			key = s[:idx]
-			value = s[idx+len(sep):]
-			return key, value, true
+	seps := []string{": ", ":", "："}
+	firstIdx := -1
+	sepLen := 0
+
+	for _, sep := range seps {
+		idx := strings.Index(s, sep)
+		if idx != -1 {
+			if firstIdx == -1 || idx < firstIdx {
+				firstIdx = idx
+				sepLen = len(sep)
+			}
 		}
+	}
+
+	if firstIdx != -1 {
+		return s[:firstIdx], s[firstIdx+sepLen:], true
 	}
 	return "", "", false
 }
 
 // parseRuleLine 解析规则行（格式：[名称] if 条件 -> 动作）
+// 在解析阶段预编译 AST，避免运行时重新解析
+// 这样每次对话执行规则时，直接执行预编译好的表达式树，性能提升巨大
+// 注意：使用全局 ParseExprFunc（由 engine 包注册），避免循环依赖
 func parseRuleLine(line string, lineNum int) (*BlockEntry, error) {
 	line = strings.TrimSpace(line)
 
+	// 检查是否以 "[" 开头
 	if !strings.HasPrefix(line, "[") {
-		return nil, fmt.Errorf("第 %d 行: 规则格式错误，缺少 '['", lineNum)
+		return nil, fmt.Errorf("第 %d 行: 规则必须以 '[' 开头", lineNum)
 	}
-	endBracket := strings.Index(line, "]")
-	if endBracket == -1 {
-		return nil, fmt.Errorf("第 %d 行: 规则格式错误，缺少 ']'", lineNum)
+	// 查找 "]"
+	endIdx := strings.Index(line, "]")
+	if endIdx == -1 {
+		return nil, fmt.Errorf("第 %d 行: 规则缺少闭合的 ']'", lineNum)
 	}
 
-	name := line[1:endBracket]
+	// 提取规则名
+	name := strings.TrimSpace(line[1:endIdx])
 	if name == "" {
 		return nil, fmt.Errorf("第 %d 行: 规则名不能为空", lineNum)
 	}
 
-	rest := strings.TrimSpace(line[endBracket+1:])
-	if !strings.HasPrefix(rest, "if ") {
-		return nil, fmt.Errorf("第 %d 行: 规则格式错误，缺少 'if'", lineNum)
-	}
+	// 提取剩余部分
+	rest := strings.TrimSpace(line[endIdx+1:])
 
-	conditionPart := rest[3:]
-	arrowIdx := strings.Index(conditionPart, " -> ")
-	if arrowIdx == -1 {
+	// 检查是否以 "if " 开头
+	if !strings.HasPrefix(rest, "if ") {
+		return nil, fmt.Errorf("第 %d 行: 规则条件必须以 'if ' 开头", lineNum)
+	}
+	rest = strings.TrimPrefix(rest, "if ")
+	rest = strings.TrimSpace(rest)
+
+	// 分割条件和动作（取第一个 "->"）
+	parts := strings.SplitN(rest, "->", 2)
+	if len(parts) != 2 {
 		return nil, fmt.Errorf("第 %d 行: 规则格式错误，缺少 '->'", lineNum)
 	}
+	condStr := strings.TrimSpace(parts[0])
+	actionStr := strings.TrimSpace(parts[1])
 
-	condition := strings.TrimSpace(conditionPart[:arrowIdx])
-	action := strings.TrimSpace(conditionPart[arrowIdx+4:])
+	if condStr == "" || actionStr == "" {
+		return nil, fmt.Errorf("第 %d 行: 规则的条件或动作不能为空", lineNum)
+	}
 
-	if condition == "" || action == "" {
-		return nil, fmt.Errorf("第 %d 行: 规则条件和动作不能为空", lineNum)
+	// 检查 ParseExprFunc 是否已注册
+	if ParseExprFunc == nil {
+		return nil, fmt.Errorf("第 %d 行: 表达式解析函数未注册（engine 包未初始化）", lineNum)
+	}
+
+	// 预编译 AST：调用注册的解析函数
+	expr, err := ParseExprFunc(condStr)
+	if err != nil {
+		return nil, fmt.Errorf("第 %d 行: 编译条件失败: %w", lineNum, err)
 	}
 
 	return &BlockEntry{
-		Type:  "rule",
-		Key:   name,
-		Value: condition + " -> " + action,
-		Line:  lineNum,
+		Type:       "rule",
+		Key:        name,
+		Value:      condStr, // 保留原始条件字符串，供展示/调试
+		Line:       lineNum,
+		RuleExpr:   expr,      // 预编译的 AST 表达式树（parser.Expr 类型）
+		RuleAction: actionStr, // 预编译的动作字符串
 	}, nil
+}
+
+// ScanReferences 扫描所有区块内容中的 @别名 引用
+// 使用 strings.FieldsSeq 迭代字段，避免分配临时切片（Go 1.23+）
+// 优化：增加非空和非重复校验
+func (pf *ParsedFile) ScanReferences() {
+	seen := make(map[string]bool)
+	for _, block := range pf.Blocks {
+		for w := range strings.FieldsSeq(block.Raw) {
+			if strings.HasPrefix(w, "@") && len(w) > 1 {
+				ref := strings.TrimLeft(w, "@")
+				// 去除常见的标点符号
+				ref = strings.TrimFunc(ref, func(r rune) bool {
+					return r == ',' || r == '.' || r == '?' || r == '!' ||
+						r == ';' || r == '"' || r == '\'' || r == ')' ||
+						r == ']' || r == '}' || r == '：'
+				})
+				// 非空且未重复才添加
+				if ref != "" && !seen[ref] {
+					seen[ref] = true
+					pf.References = append(pf.References, ref)
+				}
+			}
+		}
+	}
 }

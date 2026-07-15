@@ -44,8 +44,6 @@ func ParseFile(filename string) (*ParsedFile, error) {
 	if err := pf.Validate(); err != nil {
 		return nil, err
 	}
-	// 外部引用扫描
-	pf.ScanReferences()
 
 	return pf, nil
 }
@@ -224,24 +222,4 @@ func validateBlocks(blocks []*ParsedBlock) error {
 		}
 	}
 	return nil
-}
-
-// ScanReferences 扫描所有区块内容中的 @别名 引用
-// 使用 strings.FieldsSeq 迭代字段，避免分配临时切片（Go 1.23+）
-func (pf *ParsedFile) ScanReferences() {
-	seen := make(map[string]bool)
-	for _, block := range pf.Blocks {
-		for w := range strings.FieldsSeq(block.Raw) {
-			if strings.HasPrefix(w, "@") && len(w) > 1 {
-				ref := strings.TrimLeft(w, "@")
-				ref = strings.TrimFunc(ref, func(r rune) bool {
-					return unicode.IsPunct(r)
-				})
-				if ref != "" && !seen[ref] {
-					seen[ref] = true
-					pf.References = append(pf.References, ref)
-				}
-			}
-		}
-	}
 }
