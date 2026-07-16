@@ -20,30 +20,29 @@ import (
 )
 
 // ParseFile 是解析器的入口函数，串联整个流程
+// 现在所有错误都包装文件名
 func ParseFile(filename string) (*ParsedFile, error) {
 	lines, err := readLines(filename)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", filename, err)
 	}
 
 	blocks, err := splitBlocks(lines)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", filename, err)
 	}
 
 	if err := validateBlocks(blocks); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", filename, err)
 	}
 
 	pf := &ParsedFile{Blocks: blocks}
 
-	// 语义解析
 	if err := pf.ParseSemantics(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", filename, err)
 	}
-	// 类型验证
 	if err := pf.Validate(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", filename, err)
 	}
 
 	return pf, nil

@@ -1,3 +1,12 @@
+// ============================================================
+// app.go - 应用主流程编排
+// 职责：
+// 1. 串联整个应用流程：解析 → 构建上下文 → 加载规则 → 进入对话
+// 2. 打印角色信息、开局场景
+// 3. 初始化 LLM 客户端（可选）
+// 4. 使用 parser 包中的常量，避免硬编码
+// ============================================================
+
 package app
 
 import (
@@ -6,20 +15,20 @@ import (
 	"strings"
 
 	"mephisto/engine"
+	"mephisto/llm"
 	"mephisto/parser"
 )
 
+// Config 应用配置
 type Config struct {
-	LLM struct {
-		APIKey  string
-		Model   string
-		BaseURL string
-	}
-	Debug bool
+	LLM   llm.Config // LLM 配置（Temperature 为 nil 时使用默认值）
+	Debug bool       // 是否启用调试模式
+	Quiet bool       // 安静模式：隐藏规则注入信息
+
 }
 
 // Run 是应用的入口，编排整个流程
-func Run(filename string) error {
+func Run(filename string, cfg Config) error {
 	fmt.Printf("📂 正在读取: %s\n", filename)
 	fmt.Println(strings.Repeat("━", 50))
 
@@ -45,10 +54,10 @@ func Run(filename string) error {
 
 	// 5. 初始化规则引擎
 	eng := engine.NewRuleEngine(ctx)
-	eng.SetDebug(false)
+	eng.SetDebug(cfg.Debug)
 
 	for _, block := range pf.Blocks {
-		if block.Name == "规则" {
+		if block.Name == parser.KeyRules {
 			eng.AddRules(block.Entries)
 		}
 	}
@@ -56,8 +65,21 @@ func Run(filename string) error {
 	fmt.Println(strings.Repeat("━", 50))
 	fmt.Println()
 
-	// 6. 进入对话循环
-	StartInteractive(eng, ctx)
+	// 6. 初始化 LLM 客户端（如果配置了 API Key）
+	var llmClient *llm.Client
+	if cfg.LLM.APIKey != "" {
+		llmClient = llm.NewClient(cfg.LLM)
+		fmt.Println("🤖 LLM 已启用")
+		fmt.Println(strings.Repeat("━", 50))
+		fmt.Println()
+	} else {
+		fmt.Println("ℹ️ LLM 未启用（未配置 API Key）")
+		fmt.Println(strings.Repeat("━", 50))
+		fmt.Println()
+	}
+
+	// 7. 进入对话循环
+	StartInteractive(eng, ctx, llmClient, cfg.Quiet)
 
 	return nil
 }
@@ -66,14 +88,8 @@ func Run(filename string) error {
 func printRoleInfo(ctx engine.Context) {
 	fmt.Println("\n📊 角色加载完成")
 
-	// 1. 先显示系统固定的核心信息（按固定顺序）
-	coreKeys := []string{
-		"角色名",
-		"世界观",
-		"角色背景",
-	}
-
-	for _, k := range coreKeys {
+	// 1. 先显示系统固定的核心信息（使用 parser.CoreKeys）
+	for _, k := range parser.CoreKeys {
 		val, ok := ctx[k]
 		if !ok {
 			continue
@@ -82,11 +98,10 @@ func printRoleInfo(ctx engine.Context) {
 	}
 
 	// 2. 再显示从 【状态】 区块读取的动态键值对（排除已显示的核心键）
-	// 收集所有状态键
 	var stateKeys []string
 	for k := range ctx {
-		// 排除核心键和系统内部键
-		if k == "角色名" || k == "世界观" || k == "角色背景" || k == "开局场景" || k == "输入" {
+		// 使用 parser.StateExcludeKeys 排除系统键
+		if parser.StateExcludeKeys[k] {
 			continue
 		}
 		stateKeys = append(stateKeys, k)

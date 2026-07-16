@@ -20,6 +20,10 @@ import (
 	"mephisto/utils"
 )
 
+// groupRegex 匹配互斥组标记 [group:xxx]
+// 使用全局变量缓存，避免每次 extractGroup 都重新编译
+var groupRegex = regexp.MustCompile(`^\[group:([^\]]+)\]\s*`)
+
 // ============================================================
 // 初始化：注册解析函数到 parser 包
 // 这样 parser 包可以调用 engine.ParseExpression 而无需导入 engine
@@ -70,13 +74,13 @@ func (e *RuleEngine) AddRule(name, condition, action string, expr parser.Expr, l
 }
 
 // extractGroup 从动作中提取互斥组标记
+// 使用全局正则表达式 groupRegex
 func extractGroup(action string) (string, string) {
 	action = strings.TrimSpace(action)
-	re := regexp.MustCompile(`^\[group:([^\]]+)\]\s*`)
-	matches := re.FindStringSubmatch(action)
+	matches := groupRegex.FindStringSubmatch(action)
 	if len(matches) >= 2 {
 		group := matches[1]
-		cleaned := strings.TrimSpace(re.ReplaceAllString(action, ""))
+		cleaned := strings.TrimSpace(groupRegex.ReplaceAllString(action, ""))
 		return cleaned, group
 	}
 	return action, ""
@@ -173,31 +177,54 @@ func (e *RuleEngine) Execute() ([]ActionResult, error) {
 	return results, nil
 }
 
-// executeAction 执行动作
+// executeAction 执行动作，返回 ActionResult
+// 现在会填充 Type 字段
 func (e *RuleEngine) executeAction(action, ruleName string, line int) ActionResult {
+	_ = line // 保留
+
 	action = strings.TrimSpace(action)
 
+	// 注入动作
 	if content, ok := strings.CutPrefix(action, "注入 "); ok {
 		content = strings.TrimSpace(content)
 		content = strings.Trim(content, `"'`)
 		return ActionResult{
 			Success: true,
+			Type:    ActionInject,
+			Data:    content,
 			Message: fmt.Sprintf("触发规则 [%s]: 注入内容「%s」", ruleName, content),
 		}
 	}
 
-	// 检测骰子
+	// LLM 生成动作
+	if prompt, ok := strings.CutPrefix(action, "LLM: "); ok {
+		prompt = strings.TrimSpace(prompt)
+		prompt = strings.Trim(prompt, `"'`)
+		return ActionResult{
+			Success: true,
+			Type:    ActionLLM,
+			Data:    prompt,
+			Message: fmt.Sprintf("触发规则 [%s]: LLM 生成", ruleName),
+		}
+	}
+
+	// 骰子动作（如果动作中直接包含 roll 并返回结果）
 	if strings.Contains(action, "roll(") {
 		if result, err := RollDice(action); err == nil && result > 0 {
 			return ActionResult{
 				Success: true,
+				Type:    ActionDice,
+				Data:    fmt.Sprintf("%d", result),
 				Message: fmt.Sprintf("触发规则 [%s]: %s | 掷骰结果: %d", ruleName, action, result),
 			}
 		}
 	}
 
+	// 普通动作
 	return ActionResult{
 		Success: true,
+		Type:    ActionPlain,
+		Data:    action,
 		Message: fmt.Sprintf("触发规则 [%s]: %s", ruleName, action),
 	}
 }

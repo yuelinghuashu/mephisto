@@ -6,6 +6,7 @@
 // 3. 定义 Expr 接口（供 engine 包实现，避免循环依赖）
 // 4. 定义全局解析函数变量，由 engine 包注册
 // 5. 为规则引擎提供预编译字段（RuleExpr, RuleAction）
+// 6. 定义区块键名常量，统一管理，避免硬编码分散
 // 这是整个解析器的基础，所有其他文件依赖它。
 // ============================================================
 
@@ -32,7 +33,61 @@ type Expr interface {
 // 由 engine 包实现并注册
 var ParseExprFunc func(string) (Expr, error)
 
-// ========== 区块类型枚举 ==========
+// ============================================================
+// 区块键名常量（统一管理，避免硬编码分散）
+// ============================================================
+
+const (
+	// KeyRoleName 角色名（必填单行文本）
+	KeyRoleName = "角色名"
+	// KeyAnchor 锚点（核心人格设定，键值对列表）
+	KeyAnchor = "锚点"
+	// KeyWorldview 世界观（多行自由文本）
+	KeyWorldview = "世界观"
+	// KeyBackground 角色背景（多行自由文本）
+	KeyBackground = "角色背景"
+	// KeyOpening 开局场景（多行自由文本，支持变量替换）
+	KeyOpening = "开局场景"
+	// KeyState 状态（动态变量，键值对列表）
+	KeyState = "状态"
+	// KeyRules 规则（规则列表）
+	KeyRules = "规则"
+	// KeyValidation 校验（后置检查配置，键值对列表）
+	KeyValidation = "校验"
+	// KeyMemory 记忆（记忆系统配置，键值对列表）
+	KeyMemory = "记忆"
+)
+
+// CoreKeys 核心区块键名列表（用于打印和上下文构建）
+// 这些是系统固定的核心信息，在打印角色信息时优先显示
+var CoreKeys = []string{
+	KeyRoleName,
+	KeyWorldview,
+	KeyBackground,
+}
+
+// TextBlockKeys 文本区块键名列表（支持变量替换）
+// 这些区块中的 {变量} 会被上下文中的值替换
+var TextBlockKeys = []string{
+	KeyWorldview,
+	KeyBackground,
+	KeyOpening,
+}
+
+// StateExcludeKeys 在显示状态时需要排除的键名
+// 这些键要么已单独显示，要么是系统内部键，不应出现在状态列表中
+var StateExcludeKeys = map[string]bool{
+	KeyRoleName:   true,
+	KeyAnchor:     true,
+	KeyWorldview:  true,
+	KeyBackground: true,
+	KeyOpening:    true,
+	"输入":          true, // 用户输入是临时变量，不应显示在状态中
+}
+
+// ============================================================
+// 区块类型枚举
+// ============================================================
 
 // BlockType 定义区块内容的结构类型
 type BlockType int
@@ -53,18 +108,20 @@ type BlockSpec struct {
 // BlockRegistry 是区块名称到规格的映射表（白名单 + 类型定义）
 // 所有允许的区块必须在这里注册，新增区块只需在此添加一行
 var BlockRegistry = map[string]BlockSpec{
-	"角色名":  {Type: SingleLineText, Required: true},
-	"世界观":  {Type: MultiLineText},
-	"角色背景": {Type: MultiLineText},
-	"开局场景": {Type: MultiLineText},
-	"锚点":   {Type: KeyValueList},
-	"状态":   {Type: KeyValueList},
-	"校验":   {Type: KeyValueList},
-	"记忆":   {Type: KeyValueList},
-	"规则":   {Type: RuleList},
+	KeyRoleName:   {Type: SingleLineText, Required: true},
+	KeyWorldview:  {Type: MultiLineText},
+	KeyBackground: {Type: MultiLineText},
+	KeyOpening:    {Type: MultiLineText},
+	KeyAnchor:     {Type: KeyValueList},
+	KeyState:      {Type: KeyValueList},
+	KeyValidation: {Type: KeyValueList},
+	KeyMemory:     {Type: KeyValueList},
+	KeyRules:      {Type: RuleList},
 }
 
-// ========== 解析结果数据结构 ==========
+// ============================================================
+// 解析结果数据结构
+// ============================================================
 
 // ParsedFile 是整个 .meph 文件的解析结果
 type ParsedFile struct {

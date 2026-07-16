@@ -229,53 +229,45 @@
     {
       "Name": "规则",
       "Line": 36,
-      "Raw": "# ---- 战斗规则（互斥组：combat） ----\n[攻击] if 情绪 == \"暴怒\" \u0026\u0026 堕落指数 \u003e 70 -\u003e [group:combat] 全力攻击周围目标\n[攻击] if 情绪 == \"暴怒\" -\u003e [group:combat] 普通攻击周围目标\n[防御] if 情绪 == \"恐惧\" -\u003e [group:combat] 防御姿态\n[逃跑] if 生命值 \u003c 20 -\u003e [group:combat] 逃跑\n\n# ---- 对话规则（全部执行） ----\n[嘲讽] if 输入包含 \"光之国\" \u0026\u0026 情绪 != \"平静\" -\u003e 先嘲讽再回应\n[狂笑] if roll(1d100) \u003e 80 || 情绪 == \"疯狂\" -\u003e 大笑\n\n# ---- 注入规则（全部执行） ----\n[光之国背景] if 输入包含 \"光之国\" -\u003e 注入 \"{角色名}的故乡是光之国，也是他最大的仇恨来源\"\n[雷布朗多] if 堕落指数 \u003e 60 -\u003e 注入 \"雷布朗多在你体内低语：力量才是唯一真理，{角色名}\"\n[堕落警告] if 堕落指数 \u003e 80 -\u003e 注入 \"警告：{角色名}的堕落指数已达 {堕落指数}，接近失控边缘\"\n",
+      "Raw": "# ---- 战斗规则（互斥组：combat） ----\n[攻击] if 输入包含 \"攻击\" || 输入包含 \"战斗\" -\u003e [group:combat] 全力攻击周围目标\n[防御] if 输入包含 \"防御\" || 输入包含 \"防守\" -\u003e [group:combat] 防御姿态\n[逃跑] if 输入包含 \"逃跑\" || 输入包含 \"撤退\" -\u003e [group:combat] 逃跑\n\n# ---- 对话规则（全部执行） ----\n[嘲讽] if 输入包含 \"光之国\" \u0026\u0026 输入不包含 \"不嘲讽\" -\u003e 先嘲讽再回应\n[狂笑] if 输入包含 \"狂妄\" || 输入包含 \"力量\" -\u003e 大笑\n\n# ---- 注入规则（全部执行） ----\n[光之国背景] if 输入包含 \"光之国\" -\u003e 注入 \"{角色名}的故乡是光之国，也是他最大的仇恨来源\"\n[雷布朗多] if 输入包含 \"雷布朗多\" || 输入包含 \"黑暗\" -\u003e 注入 \"雷布朗多在你体内低语：力量才是唯一真理，{角色名}\"\n",
       "Entries": [
         {
           "Type": "rule",
           "Key": "攻击",
-          "Value": "情绪 == \"暴怒\" \u0026\u0026 堕落指数 \u003e 70",
+          "Value": "输入包含 \"攻击\" || 输入包含 \"战斗\"",
           "Line": 38,
           "RuleExpr": null,
           "RuleAction": ""
         },
         {
           "Type": "rule",
-          "Key": "攻击",
-          "Value": "情绪 == \"暴怒\"",
+          "Key": "防御",
+          "Value": "输入包含 \"防御\" || 输入包含 \"防守\"",
           "Line": 39,
           "RuleExpr": null,
           "RuleAction": ""
         },
         {
           "Type": "rule",
-          "Key": "防御",
-          "Value": "情绪 == \"恐惧\"",
+          "Key": "逃跑",
+          "Value": "输入包含 \"逃跑\" || 输入包含 \"撤退\"",
           "Line": 40,
           "RuleExpr": null,
           "RuleAction": ""
         },
         {
           "Type": "rule",
-          "Key": "逃跑",
-          "Value": "生命值 \u003c 20",
-          "Line": 41,
-          "RuleExpr": null,
-          "RuleAction": ""
-        },
-        {
-          "Type": "rule",
           "Key": "嘲讽",
-          "Value": "输入包含 \"光之国\" \u0026\u0026 情绪 != \"平静\"",
-          "Line": 44,
+          "Value": "输入包含 \"光之国\" \u0026\u0026 输入不包含 \"不嘲讽\"",
+          "Line": 43,
           "RuleExpr": null,
           "RuleAction": ""
         },
         {
           "Type": "rule",
           "Key": "狂笑",
-          "Value": "roll(1d100) \u003e 80 || 情绪 == \"疯狂\"",
-          "Line": 45,
+          "Value": "输入包含 \"狂妄\" || 输入包含 \"力量\"",
+          "Line": 44,
           "RuleExpr": null,
           "RuleAction": ""
         },
@@ -283,23 +275,15 @@
           "Type": "rule",
           "Key": "光之国背景",
           "Value": "输入包含 \"光之国\"",
-          "Line": 48,
+          "Line": 47,
           "RuleExpr": null,
           "RuleAction": ""
         },
         {
           "Type": "rule",
           "Key": "雷布朗多",
-          "Value": "堕落指数 \u003e 60",
-          "Line": 49,
-          "RuleExpr": null,
-          "RuleAction": ""
-        },
-        {
-          "Type": "rule",
-          "Key": "堕落警告",
-          "Value": "堕落指数 \u003e 80",
-          "Line": 50,
+          "Value": "输入包含 \"雷布朗多\" || 输入包含 \"黑暗\"",
+          "Line": 48,
           "RuleExpr": null,
           "RuleAction": ""
         }
@@ -307,14 +291,14 @@
     },
     {
       "Name": "校验",
-      "Line": 52,
+      "Line": 50,
       "Raw": "- 后置检查：输出不含 \"我很脆弱\" 或 \"我需要帮助\"\n- 权重：故事模式\n",
       "Entries": [
         {
           "Type": "list",
           "Key": "后置检查",
           "Value": "输出不含 \"我很脆弱\" 或 \"我需要帮助\"",
-          "Line": 53,
+          "Line": 51,
           "RuleExpr": null,
           "RuleAction": ""
         },
@@ -322,7 +306,7 @@
           "Type": "list",
           "Key": "权重",
           "Value": "故事模式",
-          "Line": 54,
+          "Line": 52,
           "RuleExpr": null,
           "RuleAction": ""
         }
@@ -330,14 +314,14 @@
     },
     {
       "Name": "记忆",
-      "Line": 56,
+      "Line": 54,
       "Raw": "- 保留轮数：5\n- 摘要触发：10",
       "Entries": [
         {
           "Type": "list",
           "Key": "保留轮数",
           "Value": "5",
-          "Line": 57,
+          "Line": 55,
           "RuleExpr": null,
           "RuleAction": ""
         },
@@ -345,7 +329,7 @@
           "Type": "list",
           "Key": "摘要触发",
           "Value": "10",
-          "Line": 58,
+          "Line": 56,
           "RuleExpr": null,
           "RuleAction": ""
         }
