@@ -33,6 +33,7 @@ func StartInteractive(eng *engine.RuleEngine, ctx engine.Context) {
 	fmt.Println(strings.Repeat("━", 50))
 
 	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024) // 1MB 上限
 
 	for {
 		// ---- 读取用户输入 ----
@@ -40,10 +41,14 @@ func StartInteractive(eng *engine.RuleEngine, ctx engine.Context) {
 		if !scanner.Scan() {
 			break
 		}
+
+		// ---- 处理用户输入 ----
+		// 移除首尾空格并转换为小写
 		userInput := strings.TrimSpace(scanner.Text())
+		lowerInput := strings.ToLower(userInput)
 
 		// ---- 检查退出命令 ----
-		if userInput == "quit" || userInput == "exit" || userInput == "q" {
+		if lowerInput == "quit" || lowerInput == "exit" || lowerInput == "q" {
 			fmt.Println("👋 再见！")
 			break
 		}

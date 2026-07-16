@@ -17,6 +17,7 @@ import (
 
 	"mephisto/engine"
 	"mephisto/parser"
+	"mephisto/utils"
 )
 
 // BuildContext 从解析结果构建规则引擎上下文
@@ -58,14 +59,11 @@ func BuildContext(pf *parser.ParsedFile) (engine.Context, strings.Builder, error
 		case "世界观", "角色背景", "开局场景":
 			for _, entry := range block.Entries {
 				if entry.Type == "text" {
-					// 保留所有文本行，包括空行（但空行不加入 entries，由 parseBlockContent 控制）
-					// 这里只处理非空行
-					if strings.TrimSpace(entry.Value) != "" {
-						textEntries = append(textEntries, struct {
-							blockName string
-							entry     *parser.BlockEntry
-						}{block.Name, entry})
-					}
+					// 保留所有行（包括空行），不再判断 TrimSpace
+					textEntries = append(textEntries, struct {
+						blockName string
+						entry     *parser.BlockEntry
+					}{block.Name, entry})
 				}
 			}
 		}
@@ -75,22 +73,20 @@ func BuildContext(pf *parser.ParsedFile) (engine.Context, strings.Builder, error
 	// 第二阶段：处理所有文本区块（此时 ctx 已包含所有变量）
 	// ============================================================
 	for _, te := range textEntries {
-		text := ReplaceVariables(te.entry.Value, ctx)
+		text := utils.ReplaceVariables(te.entry.Value, ctx)
 
-		// 拼接多行文本，保留段落结构
+		// 直接拼接，空行也会加入（换行由 WriteString 处理）
 		if existing, ok := ctx[te.blockName]; ok {
 			ctx[te.blockName] = existing.(string) + "\n" + text
 		} else {
 			ctx[te.blockName] = text
 		}
-
-		// 如果是开局场景，额外存入 openingText
 		if te.blockName == "开局场景" {
 			openingText.WriteString(text)
-			openingText.WriteString("\n")
+			openingText.WriteString("\n") // 每行后加换行
 		}
 	}
-
+	// 最后统一 TrimSpace 去掉首尾多余空行
 	if openingText.Len() > 0 {
 		ctx["开局场景"] = strings.TrimSpace(openingText.String())
 	}

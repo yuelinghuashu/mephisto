@@ -244,20 +244,33 @@ func (e *DiceExprWrapper) Eval(env map[string]any) (any, error) {
 // ParseExpression 入口函数
 // ============================================================
 
-// ParseExpression 解析条件字符串为 AST 表达式，返回 parser.Expr
-// 这是 engine 包提供给外部（主要是 parser 包）的解析函数
-// 在 init 中注册到 parser.ParseExprFunc
-func ParseExpression(cond string) (parser.Expr, error) {
-	cond = strings.TrimSpace(cond)
-	// 去除最外层括号
-	for strings.HasPrefix(cond, "(") && strings.HasSuffix(cond, ")") {
-		inner := cond[1 : len(cond)-1]
-		if isBalanced(inner) {
-			cond = strings.TrimSpace(inner)
+// stripOuterParens 剥离表达式最外层匹配的括号对
+// 例如: "((a && b))" → "a && b"
+// "((情绪 == \"暴怒\")" → "情绪 == \"暴怒\""
+func stripOuterParens(s string) string {
+	s = strings.TrimSpace(s)
+	for {
+		trimmed := strings.TrimSpace(s)
+		if !strings.HasPrefix(trimmed, "(") || !strings.HasSuffix(trimmed, ")") {
+			break
+		}
+		inner := trimmed[1 : len(trimmed)-1]
+		// 用标准库检查括号是否平衡
+		if strings.Count(inner, "(") == strings.Count(inner, ")") {
+			s = inner
 		} else {
 			break
 		}
 	}
+	return s
+}
+
+// ParseExpression 解析条件字符串为 AST 表达式，返回 parser.Expr
+// 这是 engine 包提供给外部（主要是 parser 包）的解析函数
+// 在 init 中注册到 parser.ParseExprFunc
+func ParseExpression(cond string) (parser.Expr, error) {
+	// 去除最外层括号
+	cond = stripOuterParens(cond)
 
 	// 按优先级分割：先 && 再 ||
 	if expr, ok := splitByOperator(cond, "&&"); ok {
@@ -380,20 +393,4 @@ func splitByOperator(cond, op string) (*splitPair, bool) {
 		}
 	}
 	return nil, false
-}
-
-// isBalanced 检查括号是否平衡
-func isBalanced(s string) bool {
-	count := 0
-	for _, ch := range s {
-		if ch == '(' {
-			count++
-		} else if ch == ')' {
-			count--
-			if count < 0 {
-				return false
-			}
-		}
-	}
-	return count == 0
 }

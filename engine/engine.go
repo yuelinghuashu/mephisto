@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"mephisto/parser"
+	"mephisto/utils"
 )
 
 // ============================================================
@@ -142,7 +143,8 @@ func (e *RuleEngine) Execute() ([]ActionResult, error) {
 
 		if matchedBool {
 			// 执行动作（支持变量替换）
-			action := e.replaceVariables(rule.Action)
+			action := utils.ReplaceVariables(rule.Action, e.Context)
+
 			result := e.executeAction(action, rule.Name, rule.Line)
 
 			if e.Debug {
@@ -171,28 +173,13 @@ func (e *RuleEngine) Execute() ([]ActionResult, error) {
 	return results, nil
 }
 
-// replaceVariables 替换动作中的 {变量}
-func (e *RuleEngine) replaceVariables(action string) string {
-	re := regexp.MustCompile(`\{([^{}]+)\}`)
-	return re.ReplaceAllStringFunc(action, func(match string) string {
-		key := strings.Trim(match, "{}")
-		if val, ok := e.Context[key]; ok {
-			return fmt.Sprintf("%v", val)
-		}
-		return match
-	})
-}
-
 // executeAction 执行动作
 func (e *RuleEngine) executeAction(action, ruleName string, line int) ActionResult {
 	action = strings.TrimSpace(action)
 
-	if strings.HasPrefix(action, "注入 ") {
-		content := strings.TrimPrefix(action, "注入 ")
-		content = strings.TrimPrefix(content, `"`)
-		content = strings.TrimSuffix(content, `"`)
-		content = strings.TrimPrefix(content, `'`)
-		content = strings.TrimSuffix(content, `'`)
+	if content, ok := strings.CutPrefix(action, "注入 "); ok {
+		content = strings.TrimSpace(content)
+		content = strings.Trim(content, `"'`)
 		return ActionResult{
 			Success: true,
 			Message: fmt.Sprintf("触发规则 [%s]: 注入内容「%s」", ruleName, content),

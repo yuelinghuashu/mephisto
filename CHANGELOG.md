@@ -7,6 +7,28 @@
 
 ---
 
+## [v0.2.1] — 2026-07-16
+
+### 🧹 优化
+
+- **自动化测试**
+  - 契约测试（`parser_test.go`）：基于 `sample.meph` 的 Golden File 测试
+  - 引擎单元测试（`engine_test.go`）：覆盖 AST 求值、骰子、互斥组、动作执行
+  - 支持 `go test -update` 更新 Golden 文件
+- **代码精简**
+  - 删除冗余的 `helpers.go`，变量替换统一到 `utils/interpolate.go`
+  - 精简 `validate.go` 中的冗余检查，保留核心语义约束
+  - `printRoleInfo` 动态显示状态，不再硬编码
+  - 区块类型判断基于 `BlockRegistry`，消除硬编码列表
+- **路径管理**
+  - 测试路径统一使用 `getTestDataPath` + `runtime.Caller`
+
+### 🔧 修复
+
+- 错误信息包含文件名，定位更精准
+- 注入动作使用 `strings.CutPrefix` 和 `strings.Trim`
+- 表达式解析器用标准库 `strings.Count` 替代自定义 `isBalanced`
+
 ## [v0.2.0] — 2026-07-15
 
 ### ✨ 新增

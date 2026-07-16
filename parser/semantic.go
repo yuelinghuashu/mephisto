@@ -19,8 +19,13 @@ import (
 // ParseSemantics 遍历所有区块，调用 parseBlockContent 填充 Entries
 func (pf *ParsedFile) ParseSemantics() error {
 	for _, block := range pf.Blocks {
-		// 判断是否为自由文本区块（这些区块需要保留空行）
-		isTextBlock := block.Name == "角色名" || block.Name == "世界观" || block.Name == "角色背景" || block.Name == "开局场景"
+		// 从注册表判断是否为文本区块（SingleLineText 或 MultiLineText）
+		spec, ok := BlockRegistry[block.Name]
+		if !ok {
+			return fmt.Errorf("未知区块类型: %s", block.Name)
+		}
+		isTextBlock := spec.Type == SingleLineText || spec.Type == MultiLineText
+
 		entries, err := parseBlockContent(block.Raw, block.Line, isTextBlock)
 		if err != nil {
 			return fmt.Errorf("解析 【%s】 区块失败: %w", block.Name, err)
@@ -33,12 +38,11 @@ func (pf *ParsedFile) ParseSemantics() error {
 }
 
 // parseBlockContent 解析区块的原始文本（raw），生成条目列表
-// 使用 strings.Lines 按行迭代，避免一次性分配整个行切片
 // 参数：
 //   - raw: 区块原始内容（包含注释、空行）
 //   - startLine: 区块标题所在行号（用于计算绝对行号）
-//   - isTextBlock: 是否为文本区块（决定是否保留空行）
-func parseBlockContent(raw string, startLine int, isTextBlock bool) ([]*BlockEntry, error) {
+//   - keepEmptyLines: 是否保留空行（文本区块为 true，结构化区块为 false）
+func parseBlockContent(raw string, startLine int, keepEmptyLines bool) ([]*BlockEntry, error) {
 	var entries []*BlockEntry
 	i := 0
 
@@ -56,7 +60,7 @@ func parseBlockContent(raw string, startLine int, isTextBlock bool) ([]*BlockEnt
 
 		// 空行处理
 		if trimmed == "" {
-			if isTextBlock {
+			if keepEmptyLines {
 				// 文本区块：保留空行（作为 Value="" 的 text 条目）
 				entries = append(entries, &BlockEntry{
 					Type:  "text",
@@ -183,20 +187,21 @@ func parseRuleLine(line string, lineNum int) (*BlockEntry, error) {
 	// 提取剩余部分
 	rest := strings.TrimSpace(line[endIdx+1:])
 
-	// 检查是否以 "if " 开头
-	if !strings.HasPrefix(rest, "if ") {
+	// 使用 CutPrefix 替代 HasPrefix + TrimPrefix
+	condPart, ok := strings.CutPrefix(rest, "if ")
+	if !ok {
 		return nil, fmt.Errorf("第 %d 行: 规则条件必须以 'if ' 开头", lineNum)
 	}
-	rest = strings.TrimPrefix(rest, "if ")
-	rest = strings.TrimSpace(rest)
+	rest = strings.TrimSpace(condPart)
 
 	// 分割条件和动作（取第一个 "->"）
-	parts := strings.SplitN(rest, "->", 2)
-	if len(parts) != 2 {
+	// 用 Cut 替代 SplitN
+	condStr, actionStr, ok := strings.Cut(rest, "->")
+	if !ok {
 		return nil, fmt.Errorf("第 %d 行: 规则格式错误，缺少 '->'", lineNum)
 	}
-	condStr := strings.TrimSpace(parts[0])
-	actionStr := strings.TrimSpace(parts[1])
+	condStr = strings.TrimSpace(condStr)
+	actionStr = strings.TrimSpace(actionStr)
 
 	if condStr == "" || actionStr == "" {
 		return nil, fmt.Errorf("第 %d 行: 规则的条件或动作不能为空", lineNum)

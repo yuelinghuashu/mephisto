@@ -12,6 +12,7 @@ package parser
 import (
 	"bufio"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -173,11 +174,7 @@ func validateAndCreateBlock(line string, lineNum int) (*ParsedBlock, error) {
 
 	// 白名单检查（手动收集 keys 再排序，兼容 Go 1.21+）
 	if _, ok := BlockRegistry[name]; !ok {
-		allowed := make([]string, 0, len(BlockRegistry))
-		for k := range BlockRegistry {
-			allowed = append(allowed, k)
-		}
-		slices.Sort(allowed)
+		allowed := slices.Sorted(maps.Keys(BlockRegistry))
 		return nil, fmt.Errorf("第 %d 行：未知区块名 %q，允许的名称有：%s",
 			lineNum, name, strings.Join(allowed, "、"))
 	}
@@ -197,20 +194,18 @@ func validateBlocks(blocks []*ParsedBlock) error {
 		seen[b.Name] = b.Line
 	}
 
-	// 对特定区块检查内容是否为空
-	// 这些区块是“必须有内容”的
-	mustHaveContent := map[string]bool{
-		"角色名":  true,
-		"世界观":  true,
-		"角色背景": true,
-	}
-
-	// 检查所有必填区块是否存在
+	// 检查所有必填区块是否存在且有内容
 	for _, b := range blocks {
-		// 检查区块是否为空
-		if mustHaveContent[b.Name] {
+		// 从注册表获取规格
+		spec, ok := BlockRegistry[b.Name]
+		if !ok {
+			continue // 理论上不会触发，因为白名单已检查
+		}
+
+		// 只检查 Required 为 true 的区块
+		if spec.Required {
 			hasContent := false
-			for _, line := range strings.Split(b.Raw, "\n") {
+			for line := range strings.SplitSeq(b.Raw, "\n") {
 				if strings.TrimSpace(line) != "" {
 					hasContent = true
 					break

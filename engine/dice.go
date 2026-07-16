@@ -40,7 +40,6 @@ func ParseDice(expr string) (*DiceRoll, bool) {
 
 // Roll 执行掷骰操作
 // 使用全局 rand.Intn，Go 1.20+ 已自动随机种子，且线程安全
-// 相比每次新建 rand.New(rand.NewSource(time.Now().UnixNano()))，性能提升巨大
 func (dr *DiceRoll) Roll() int {
 	total := 0
 	for i := 0; i < dr.Num; i++ {
