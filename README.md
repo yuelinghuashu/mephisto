@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.3.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-v0.4.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/Go-1.23+-00ADD8" alt="Go Version">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
 </p>
@@ -27,6 +27,8 @@
 - 📜 **契约驱动**：用 `【】` 定义区块，用 `-` 定义状态，用 `[规则]` 定义行为
 - ⚡ **规则引擎**：条件判断、逻辑运算、骰子表达式（`roll(1d100)`）、互斥组
 - 🧠 **LLM 集成**：流式输出、对话历史管理、后置校验
+- 💾 **记忆编织**：智能提取关键事件、自动压缩摘要、长期记忆持久化
+- 📂 **子版存档**：每轮自动保存，支持多分支故事线
 - 🎯 **命运视角**：你是“命运”（叙事的推动者），输入指令，驱动角色行动
 - 🧪 **契约测试**：Golden File 测试保障解析器稳定性
 
@@ -52,13 +54,31 @@ go run main.go data/sample.meph
 ```text
 （命运）: 贝利亚驾驶飞船前往光之国边境
 
+📖 叙事注入:
+  贝利亚奥特曼的故乡是光之国，也是他最大的仇恨来源
+
 📖 命运:
   黑色飞船撕裂宇宙空间，贝利亚站在驾驶舱中，
   赤红的双眼死死盯着前方逐渐放大的光之国度...
 
-📖 叙事注入:
-  贝利亚奥特曼的故乡是光之国，也是他最大的仇恨来源
-  雷布朗多在你体内低语：力量才是唯一真理，贝利亚奥特曼
+💾 已保存子版: data/sample_child.meph
+```
+
+---
+
+## 🎭 多分支故事线
+
+梅菲斯特支持在同一故事世界中创建多个分支，探索不同的剧情走向。
+
+```bash
+# 默认子版（相当于"主线"）
+go run main.go data/sample.meph
+
+# 指定分支
+go run main.go --branch dark data/sample.meph
+
+# 直接加载分支文件
+go run main.go data/sample_dark.meph
 ```
 
 ---
@@ -88,6 +108,8 @@ go run main.go [选项] <文件.meph>
   -temperature float   温度值 0.0~2.0
   -debug               启用规则调试模式
   -quiet               安静模式（隐藏注入信息）
+  -retain int          对话历史保留轮数（默认 10）
+  -branch string       分支名（多分支故事线）
 ```
 
 ---
@@ -98,6 +120,12 @@ go run main.go [选项] <文件.meph>
 mephisto/
 ├── main.go              # 程序入口
 ├── app/                 # 应用逻辑层
+│   ├── app.go           # 主流程编排
+│   ├── context.go       # 上下文构建
+│   ├── interactive.go   # 对话循环
+│   ├── prompt.go        # System Prompt 构建
+│   ├── save.go          # 子版存档（M5）
+│   └── memory.go        # 记忆编织（M5）
 ├── parser/              # 解析器
 ├── engine/              # 规则引擎
 ├── llm/                 # LLM 客户端

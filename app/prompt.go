@@ -87,7 +87,18 @@ func BuildSystemPrompt(ctx engine.Context) string {
 		fmt.Fprintf(&sb, "- %s: %s\n", key, strVal)
 	}
 
-	// ---- 第六层：角色扮演指令（行为约束） ----
+	// ---- 第六层：角色记忆 ----
+	if memories, ok := ctx[parser.KeyMemory].([]string); ok && len(memories) > 0 {
+		sb.WriteString("\n## 角色记忆\n")
+		sb.WriteString("以下是角色长期记忆中的重要事件：\n")
+		for _, mem := range memories {
+			sb.WriteString("- ")
+			sb.WriteString(mem)
+			sb.WriteString("\n")
+		}
+	}
+
+	// ---- 第七层：角色扮演指令（行为约束） ----
 	sb.WriteString("\n## 角色扮演指令\n")
 	sb.WriteString("以下是你在回应时必须遵守的规则：\n")
 	sb.WriteString("1. 你正在扮演这个角色在故事中行动，**你不是在「回复」用户，而是在「推进」剧情**\n")

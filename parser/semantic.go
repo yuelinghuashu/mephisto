@@ -26,7 +26,8 @@ func (pf *ParsedFile) ParseSemantics() error {
 		}
 		isTextBlock := spec.Type == SingleLineText || spec.Type == MultiLineText
 
-		entries, err := parseBlockContent(block.Raw, block.Line, isTextBlock)
+		// 传入区块名称，用于列表项解析时的分区处理
+		entries, err := parseBlockContent(block.Raw, block.Line, isTextBlock, block.Name)
 		if err != nil {
 			return fmt.Errorf("解析 【%s】 区块失败: %w", block.Name, err)
 		}
@@ -42,7 +43,8 @@ func (pf *ParsedFile) ParseSemantics() error {
 //   - raw: 区块原始内容（包含注释、空行）
 //   - startLine: 区块标题所在行号（用于计算绝对行号）
 //   - keepEmptyLines: 是否保留空行（文本区块为 true，结构化区块为 false）
-func parseBlockContent(raw string, startLine int, keepEmptyLines bool) ([]*BlockEntry, error) {
+//   - blockName: 区块名称，用于列表项解析时的分区处理
+func parseBlockContent(raw string, startLine int, keepEmptyLines bool, blockName string) ([]*BlockEntry, error) {
 	var entries []*BlockEntry
 	i := 0
 
@@ -75,7 +77,8 @@ func parseBlockContent(raw string, startLine int, keepEmptyLines bool) ([]*Block
 
 		// 列表项：以 "-" 开头
 		if strings.HasPrefix(trimmed, "-") {
-			entry, err := parseListLine(trimmed, absoluteLineNum)
+			// 传入 blockName，让 parseListLine 根据区块类型决定是否允许纯文本
+			entry, err := parseListLine(trimmed, absoluteLineNum, blockName)
 			if err != nil {
 				return nil, err
 			}
@@ -107,10 +110,25 @@ func parseBlockContent(raw string, startLine int, keepEmptyLines bool) ([]*Block
 	return entries, nil
 }
 
-// parseListLine 解析列表行（格式：- 键: 值）
-// 值中允许包含冒号（只按第一个冒号分割）
-// 优化：取所有分隔符中索引最小的，解决中英文冒号混用问题
-func parseListLine(line string, lineNum int) (*BlockEntry, error) {
+// parseListLine 解析列表行
+// 支持两种格式：
+//  1. 键值对格式：- 键: 值（用于【状态】、【锚点】等）
+//  2. 纯文本格式：- 内容（仅用于【记忆】区块）
+//
+// 参数：
+//   - line: 原始行内容（已 TrimSpace）
+//   - lineNum: 绝对行号（用于报错）
+//   - blockName: 当前区块名称，用于判断是否允许纯文本
+//
+// 返回值：
+//   - 解析成功返回 BlockEntry，Type 固定为 "list"
+//   - 解析失败返回 error
+//
+// 设计说明：
+//   - 记忆区块（KeyMemory）允许纯文本列表，因为记忆条目是独立的事件描述
+//   - 其他列表区块（状态、锚点等）必须使用键值对格式，保证数据结构的严格性
+//   - 这种"分区处理"策略既满足了 M5 的需求，又保护了现有区块的格式正确性
+func parseListLine(line string, lineNum int, blockName string) (*BlockEntry, error) {
 	rest := strings.TrimSpace(line)
 	if !strings.HasPrefix(rest, "-") {
 		return nil, fmt.Errorf("第 %d 行: 列表项必须以 '-' 开头", lineNum)
@@ -122,12 +140,25 @@ func parseListLine(line string, lineNum int) (*BlockEntry, error) {
 		return nil, fmt.Errorf("第 %d 行: 列表项内容为空", lineNum)
 	}
 
-	// 优化后的 splitKeyValue：取所有分隔符中索引最小的
+	// 尝试分割键值对（支持中英文冒号）
 	key, value, found := splitKeyValue(rest)
+
+	// 如果没有找到冒号分隔符，进入纯文本降级逻辑
 	if !found {
+		// 只有记忆区块允许纯文本格式
+		if blockName == KeyMemory {
+			return &BlockEntry{
+				Type:  "list",
+				Key:   "",   // 键为空，表示这是一个纯文本条目
+				Value: rest, // 整行作为值
+				Line:  lineNum,
+			}, nil
+		}
+		// 其他区块报错，强制要求键值对格式
 		return nil, fmt.Errorf("第 %d 行: 列表项格式错误，缺少 ':' 或 '：'", lineNum)
 	}
 
+	// 正常键值对格式
 	return &BlockEntry{
 		Type:  "list",
 		Key:   strings.TrimSpace(key),
@@ -140,6 +171,11 @@ func parseListLine(line string, lineNum int) (*BlockEntry, error) {
 // 支持：": "、":"、"："（中文冒号）
 // 优化：取所有分隔符中首次出现位置最靠左的那个
 // 这样即使 Value 中包含冒号，也不会误分割
+//
+// 示例：
+//   - "情绪: 暴怒" → ("情绪", "暴怒", true)
+//   - "情绪：暴怒" → ("情绪", "暴怒", true)
+//   - "纯文本内容" → ("", "", false)
 func splitKeyValue(s string) (key, value string, ok bool) {
 	seps := []string{": ", ":", "："}
 	firstIdx := -1

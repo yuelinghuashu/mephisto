@@ -71,6 +71,18 @@ func BuildContext(pf *parser.ParsedFile) (engine.Context, strings.Builder, error
 				ctx[parser.KeyAnchor] = strings.Join(anchorLines, "\n")
 			}
 
+			// ---- 从 【记忆】 区块提取记忆 ----
+		case parser.KeyMemory:
+			var memories []string
+			for _, entry := range block.Entries {
+				if entry.Type == "list" {
+					memories = append(memories, entry.Value)
+				}
+			}
+			if len(memories) > 0 {
+				ctx[parser.KeyMemory] = memories
+			}
+
 		// ---- 【世界观】、【角色背景】、【开局场景】：暂存，等变量就绪后处理 ----
 		case parser.KeyWorldview, parser.KeyBackground, parser.KeyOpening:
 			for _, entry := range block.Entries {

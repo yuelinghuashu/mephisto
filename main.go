@@ -26,8 +26,9 @@ var (
 	quiet       bool
 	maxTokens   int
 	temperature float64
-	// tempSet 记录温度是否被命令行或环境变量显式设置
-	tempSet bool
+	tempSet     bool
+	retain      int
+	branch      string
 )
 
 func init() {
@@ -39,10 +40,16 @@ func init() {
 
 	flag.IntVar(&maxTokens, "max-tokens", 0, "最大生成 Token 数（或环境变量 MEPHISTO_MAX_TOKENS）")
 	flag.Float64Var(&temperature, "temperature", 0.0, "温度值 0.0~2.0（或环境变量 MEPHISTO_TEMPERATURE）")
+	flag.IntVar(&retain, "retain", 10, "对话历史保留轮数（默认 10）")
+	flag.StringVar(&branch, "branch", "", "分支名（用于多分支故事线）")
+
 }
 
 func main() {
 	flag.Parse()
+
+	fmt.Printf("💀 os.Args = %v\n", os.Args)    // 看实际命令行参数
+	fmt.Printf("💀 branch flag = %q\n", branch) // 看flag解析结果
 
 	// 1. 加载 .env
 	_ = godotenv.Load()
@@ -83,9 +90,11 @@ func main() {
 	}
 
 	cfg := app.Config{
-		LLM:   llmCfg,
-		Debug: debug,
-		Quiet: quiet,
+		LLM:    llmCfg,
+		Debug:  debug,
+		Quiet:  quiet,
+		Retain: retain,
+		Branch: branch,
 	}
 
 	if err := app.Run(filename, cfg); err != nil {
@@ -121,6 +130,19 @@ func resolveConfigFromEnv() {
 			}
 		}
 	}
+	if retain == 0 {
+		if v := os.Getenv("MEPHISTO_RETAIN"); v != "" {
+			if i, err := strconv.Atoi(v); err == nil {
+				retain = i
+			}
+		}
+	}
+	if branch == "" {
+		if v := os.Getenv("MEPHISTO_BRANCH"); v != "" {
+			branch = v
+		}
+	}
+
 	// 设置默认值
 	if model == "" {
 		model = "deepseek-chat"

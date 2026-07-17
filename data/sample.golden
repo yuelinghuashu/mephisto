@@ -292,7 +292,7 @@
     {
       "Name": "校验",
       "Line": 50,
-      "Raw": "- 后置检查：输出不含 \"我很脆弱\" 或 \"我需要帮助\"\n- 权重：故事模式\n",
+      "Raw": "- 后置检查：输出不含 \"我很脆弱\" 或 \"我需要帮助\"\n- 权重：故事模式",
       "Entries": [
         {
           "Type": "list",
@@ -307,29 +307,6 @@
           "Key": "权重",
           "Value": "故事模式",
           "Line": 52,
-          "RuleExpr": null,
-          "RuleAction": ""
-        }
-      ]
-    },
-    {
-      "Name": "记忆",
-      "Line": 54,
-      "Raw": "- 保留轮数：5\n- 摘要触发：10",
-      "Entries": [
-        {
-          "Type": "list",
-          "Key": "保留轮数",
-          "Value": "5",
-          "Line": 55,
-          "RuleExpr": null,
-          "RuleAction": ""
-        },
-        {
-          "Type": "list",
-          "Key": "摘要触发",
-          "Value": "10",
-          "Line": 56,
           "RuleExpr": null,
           "RuleAction": ""
         }

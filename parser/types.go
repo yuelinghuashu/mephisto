@@ -56,6 +56,8 @@ const (
 	KeyValidation = "校验"
 	// KeyMemory 记忆（记忆系统配置，键值对列表）
 	KeyMemory = "记忆"
+	// KeyHistory 历史（对话记录，由程序自动生成）
+	KeyHistory = "历史"
 )
 
 // CoreKeys 核心区块键名列表（用于打印和上下文构建）
@@ -82,7 +84,9 @@ var StateExcludeKeys = map[string]bool{
 	KeyWorldview:  true,
 	KeyBackground: true,
 	KeyOpening:    true,
-	"输入":          true, // 用户输入是临时变量，不应显示在状态中
+	KeyHistory:    true,
+	KeyMemory:     true,
+	"输入": true, // 用户输入是临时变量，不应显示在状态中
 }
 
 // ============================================================
@@ -116,6 +120,7 @@ var BlockRegistry = map[string]BlockSpec{
 	KeyState:      {Type: KeyValueList},
 	KeyValidation: {Type: KeyValueList},
 	KeyMemory:     {Type: KeyValueList},
+	KeyHistory:    {Type: KeyValueList},
 	KeyRules:      {Type: RuleList},
 }
 

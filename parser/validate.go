@@ -4,6 +4,7 @@
 // 1. 根据区块注册表（BlockRegistry）检查每个区块的内容类型是否正确
 // 2. 对文本区块（SingleLineText, MultiLineText）检查是否混入列表或规则
 // 3. 对结构化区块（KeyValueList, RuleList）检查是否只有对应类型的条目
+// 4. 【记忆】区块特殊处理：允许纯文本列表（无冒号）
 // 这是解析的第三阶段：结构化条目 → 类型验证
 // ============================================================
 
@@ -59,11 +60,21 @@ func validateBlock(block *ParsedBlock) error {
 		}
 		return nil
 
-	// ---- 【锚点】、【状态】、【校验】、【记忆】：只允许列表项 ----
+	// ---- 【状态】、【锚点】、【校验】：只允许列表项（必须包含键值对） ----
+	// ---- 【记忆】：只允许列表项（允许纯文本，键可以为空） ----
 	case KeyValueList:
 		for _, e := range block.Entries {
 			if e.Type != "list" {
-				return fmt.Errorf("只允许列表项（- 键: 值）")
+				return fmt.Errorf("只允许列表项")
+			}
+		}
+
+		// 记忆区块允许纯文本（Key 为空），其他区块必须包含键值对
+		if block.Name != KeyMemory {
+			for _, e := range block.Entries {
+				if e.Key == "" {
+					return fmt.Errorf("列表项必须包含键值对（- 键: 值），不允许纯文本")
+				}
 			}
 		}
 		return nil

@@ -5,6 +5,7 @@
 // 2. 打印角色信息、开局场景
 // 3. 初始化 LLM 客户端（可选）
 // 4. 使用 parser 包中的常量，避免硬编码
+// 5. 支持子版加载（状态、记忆、历史恢复）
 // ============================================================
 
 package app
@@ -21,10 +22,11 @@ import (
 
 // Config 应用配置
 type Config struct {
-	LLM   llm.Config // LLM 配置（Temperature 为 nil 时使用默认值）
-	Debug bool       // 是否启用调试模式
-	Quiet bool       // 安静模式：隐藏规则注入信息
-
+	LLM    llm.Config // LLM 配置（Temperature 为 nil 时使用默认值）
+	Debug  bool       // 是否启用调试模式
+	Quiet  bool       // 安静模式：隐藏规则注入信息
+	Retain int        // 对话保留轮数
+	Branch string     // 分支名
 }
 
 // Run 是应用的入口，编排整个流程
@@ -38,21 +40,50 @@ func Run(filename string, cfg Config) error {
 		return fmt.Errorf("解析 %s 失败: %w", filename, err)
 	}
 
-	// 2. 构建上下文
+	// 2. 构建上下文（先构建母版上下文）
 	ctx, openingText, err := BuildContext(pf)
 	if err != nil {
 		return fmt.Errorf("构建上下文失败 (文件: %s): %w", filename, err)
 	}
 
-	// 3. 打印角色信息
+	// 3. 尝试加载子版（使用 cfg.Branch）
+	//    注意：如果传入的已经是子版且匹配分支，LoadChild 会返回自身
+	var startHistory *ConversationHistory
+	childCtx, childHistory, err := LoadChild(filename, cfg.Branch)
+	if err != nil {
+		fmt.Printf("⚠️ 加载子版失败: %v\n", err)
+	} else if childCtx != nil {
+		// 合并子版数据：用子版的状态和记忆覆盖母版
+		for key, val := range childCtx {
+			if key == parser.KeyMemory || parser.StateExcludeKeys[key] {
+				ctx[key] = val
+			}
+		}
+		// 显示加载信息
+		if cfg.Branch != "" {
+			fmt.Printf("💾 已加载分支「%s」存档\n", cfg.Branch)
+		} else {
+			fmt.Printf("💾 已加载默认子版存档\n")
+		}
+
+		// 如果有子版历史，准备使用它
+		if childHistory != nil && childHistory.GetSize() > 0 {
+			startHistory = childHistory
+			fmt.Printf("💾 已恢复对话历史 (%d 条)\n", startHistory.GetSize())
+		} else {
+			fmt.Printf("⚠️ 子版中历史为空\n")
+		}
+	}
+
+	// 4. 打印角色信息
 	printRoleInfo(ctx)
 	fmt.Println(strings.Repeat("━", 50))
 
-	// 4. 打印开局场景
+	// 5. 打印开局场景
 	printOpening(openingText)
 	fmt.Println(strings.Repeat("━", 50))
 
-	// 5. 初始化规则引擎
+	// 6. 初始化规则引擎
 	eng := engine.NewRuleEngine(ctx)
 	eng.SetDebug(cfg.Debug)
 
@@ -65,7 +96,7 @@ func Run(filename string, cfg Config) error {
 	fmt.Println(strings.Repeat("━", 50))
 	fmt.Println()
 
-	// 6. 初始化 LLM 客户端（如果配置了 API Key）
+	// 7. 初始化 LLM 客户端（如果配置了 API Key）
 	var llmClient *llm.Client
 	if cfg.LLM.APIKey != "" {
 		llmClient = llm.NewClient(cfg.LLM)
@@ -78,8 +109,8 @@ func Run(filename string, cfg Config) error {
 		fmt.Println()
 	}
 
-	// 7. 进入对话循环
-	StartInteractive(eng, ctx, llmClient, cfg.Quiet)
+	// 8. 进入对话循环（传递 startHistory）
+	StartInteractive(eng, ctx, llmClient, cfg.Quiet, cfg.Retain, filename, cfg.Branch, startHistory)
 
 	return nil
 }
