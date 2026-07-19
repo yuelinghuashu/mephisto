@@ -1,0 +1,48 @@
+// cmd/mephisto/main.go
+//
+// Mephisto CLI - 入口
+// 职责：初始化、解析参数、调度命令、设置退出码
+package main
+
+import (
+	"os"
+
+	"github.com/joho/godotenv"
+)
+
+func main() {
+	// ---- 加载 .env 文件（如果存在） ----
+	_ = godotenv.Load() // 忽略错误，文件不存在也不影响
+
+	// 解析命令行参数
+	cfg := parseFlags()
+
+	// 根据命令类型执行
+	switch cfg.Command {
+	case CmdVersion:
+		printVersion()
+		os.Exit(0)
+
+	case CmdHelp:
+		printHelp()
+		os.Exit(0)
+
+	case CmdParse:
+		if err := runParse(cfg); err != nil {
+			printError(err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+
+	case CmdRun:
+		if err := runInteractive(cfg); err != nil {
+			printError(err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+
+	default:
+		printHelp()
+		os.Exit(1)
+	}
+}
