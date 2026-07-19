@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.4.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-v0.5.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/Go-1.23+-00ADD8" alt="Go Version">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
 </p>
@@ -28,7 +28,7 @@
 - ⚡ **规则引擎**：条件判断、逻辑运算、骰子表达式（`roll(1d100)`）、互斥组
 - 🧠 **LLM 集成**：流式输出、对话历史管理、后置校验
 - 💾 **记忆编织**：智能提取关键事件、自动压缩摘要、长期记忆持久化
-- 📂 **子版存档**：每轮自动保存，支持多分支故事线
+- 📂 **子版存档**：每轮自动保存，支持多分支故事线，直接运行子版自动覆盖
 - 🎯 **命运视角**：你是“命运”（叙事的推动者），输入指令，驱动角色行动
 - 🧪 **契约测试**：Golden File 测试保障解析器稳定性
 
@@ -40,26 +40,30 @@
 
 ```bash
 # 在项目根目录创建 .env 文件
-echo 'MEPHISTO_API_KEY=sk-你的DeepSeek密钥' > .env
+echo 'OPENAI_API_KEY=sk-你的OpenAI API密钥' > .env
 ```
 
-### 2. 运行
+### 2. 构建并运行
 
 ```bash
-go run main.go data/sample.meph
+# 构建
+go build -o mephisto ./cmd/mephisto
+
+# 运行
+./mephisto run data/sample.meph
 ```
 
 ### 3. 交互示例
 
 ```text
-（命运）: 贝利亚驾驶飞船前往光之国边境
+命运 > 你来到了光之国
 
-📖 叙事注入:
-  贝利亚奥特曼的故乡是光之国，也是他最大的仇恨来源
+贝利亚悬浮在光之国上空，俯视着下方戒备的战士们，发出一声低沉的冷笑：
+“这么多年了，这光还是这么刺眼。”
 
-📖 命运:
-  黑色飞船撕裂宇宙空间，贝利亚站在驾驶舱中，
-  赤红的双眼死死盯着前方逐渐放大的光之国度...
+奥特之父上前一步，沉声道：“贝利亚，光之国不会再次容忍你的暴行。”
+
+贝利亚转过头，猩红的眼睛盯着对方：“你们的容忍，对我而言一文不值。”
 
 💾 已保存子版: data/sample_child.meph
 ```
@@ -72,13 +76,16 @@ go run main.go data/sample.meph
 
 ```bash
 # 默认子版（相当于"主线"）
-go run main.go data/sample.meph
+./mephisto run data/sample.meph
 
 # 指定分支
-go run main.go --branch dark data/sample.meph
+./mephisto -branch dark run data/sample.meph
 
-# 直接加载分支文件
-go run main.go data/sample_dark.meph
+# 直接加载分支文件（自动覆盖）
+./mephisto run data/sample_dark.meph
+
+# 忽略子版，从母版重新开始
+./mephisto -reset run data/sample.meph
 ```
 
 ---
@@ -98,18 +105,35 @@ go run main.go data/sample_dark.meph
 ## 🛠️ 命令行选项
 
 ```bash
-go run main.go [选项] <文件.meph>
+./mephisto [全局选项] <子命令> [参数]
 
-选项:
-  -api-key string      LLM API Key（或 .env）
-  -model string        模型名称（默认 deepseek-chat）
-  -base-url string     API Base URL（默认 https://api.deepseek.com/v1）
-  -max-tokens int      最大生成 Token 数（默认 4096）
-  -temperature float   温度值 0.0~2.0
-  -debug               启用规则调试模式
-  -quiet               安静模式（隐藏注入信息）
-  -retain int          对话历史保留轮数（默认 10）
-  -branch string       分支名（多分支故事线）
+子命令:
+  parse <文件路径> [选项]   # 解析 .meph 契约，输出 JSON
+  run <文件路径> [选项]     # 启动交互式对话模式
+  version                   # 显示版本信息
+  help                      # 显示帮助信息
+
+全局选项（可放在子命令之前）:
+  -h, -help                显示帮助信息
+  -q, -quiet               静默模式，只输出错误
+  -branch <分支名>         分支名（用于多分支故事线，默认为空）
+  -reset                   忽略子版存档，从母版重新开始
+
+run 子命令选项:
+  -m, -model <模型名>      LLM 模型名称（默认从 MEPHISTO_MODEL 读取）
+  -client <类型>           LLM 客户端类型: deepseek, openai, ollama
+  -api-key <密钥>          API 密钥（默认从 OPENAI_API_KEY 读取）
+  -base-url <URL>          API 基础 URL（默认从 OPENAI_BASE_URL 读取）
+
+parse 子命令选项:
+  -o, -output <路径>       输出到文件（默认输出到 stdout）
+  -q, -quiet               静默模式，只输出错误
+
+环境变量:
+  OPENAI_API_KEY           API 密钥（优先级低于命令行）
+  OPENAI_BASE_URL          API 基础 URL
+  MEPHISTO_MODEL           模型名称
+  MEPHISTO_CLIENT          客户端类型（openai/ollama）
 ```
 
 ---
@@ -118,31 +142,32 @@ go run main.go [选项] <文件.meph>
 
 ```text
 mephisto/
-├── main.go              # 程序入口
-├── app/                 # 应用逻辑层
-│   ├── app.go           # 主流程编排
-│   ├── context.go       # 上下文构建
-│   ├── interactive.go   # 对话循环
-│   ├── prompt.go        # System Prompt 构建
-│   ├── save.go          # 子版存档（M5）
-│   └── memory.go        # 记忆编织（M5）
-├── parser/              # 解析器
-├── engine/              # 规则引擎
-├── llm/                 # LLM 客户端
-├── utils/               # 工具函数
-├── data/                # 示例文件
-├── docs/                # 完整文档
-│   ├── SYNTAX.md        # 语法手册
-│   ├── RULES.md         # 规则深度解析
-│   └── EXAMPLES.md      # 实战示例
-└── assets/              # Logo 资源
+├── cmd/
+│   └── mephisto/          # CLI 入口
+│       ├── main.go
+│       ├── help.go
+│       ├── output.go
+│       ├── flags.go
+│       ├── session.go
+│       └── utils.go
+├── internal/
+│   ├── core/              # 核心层
+│   │   ├── parser/        # 契约解析器
+│   │   ├── engine/        # 规则引擎
+│   │   ├── llm/           # LLM 客户端
+│   │   └── validator/     # 契约验证器
+│   ├── domain/            # 领域模型
+│   └── shared/            # 共享工具
+├── data/                  # 示例契约文件
+├── docs/                  # 完整文档
+└── assets/                # Logo 资源
 ```
 
 ---
 
 ## 📦 环境要求
 
-- Go 1.23+（推荐 1.26）
+- Go 1.23+（推荐 1.24+）
 
 ---
 
