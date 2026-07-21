@@ -15,6 +15,47 @@ import (
 	"strings"
 )
 
+// Entry 表示一个解析后的列表条目。
+type Entry struct {
+	Raw  string // 去掉 "- " 后的原始内容
+	Line int    // 源文件行号
+}
+
+// scanEntries 是通用的列表条目扫描器。
+// 负责处理所有 "- " 列表的通用逻辑：去空行、去注释、校验前缀。
+// 返回的 Entry 列表供上层进一步解析（键值对、纯文本、历史等）。
+func scanEntries(lines []Line, blockName string) ([]Entry, error) {
+	var entries []Entry
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line.Text)
+
+		// 跳过空行和注释
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+
+		// 必须以 "-" 开头
+		if !strings.HasPrefix(trimmed, "-") {
+			return nil, fmt.Errorf("第 %d 行（区块「%s」）：列表项必须以 '-' 开头", line.Number, blockName)
+		}
+
+		rest := strings.TrimPrefix(trimmed, "-")
+		rest = strings.TrimSpace(rest)
+
+		if rest == "" {
+			return nil, fmt.Errorf("第 %d 行（区块「%s」）：列表项内容为空", line.Number, blockName)
+		}
+
+		entries = append(entries, Entry{
+			Raw:  rest,
+			Line: line.Number,
+		})
+	}
+
+	return entries, nil
+}
+
 // splitKeyValue 将 "key: value" 格式的字符串分割为 key 和 value。
 //
 // 支持的分隔符：
@@ -44,39 +85,22 @@ func splitKeyValue(s string) (string, string, bool) {
 //
 // 空行和以 # 开头的行会被忽略。
 func parseKeyValuePairs(lines []Line, blockName string) ([]domain.KeyValue, error) {
-	var result []domain.KeyValue
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line.Text)
-
-		// 跳过空行和注释行
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-
-		// 必须以 "-" 开头
-		if !strings.HasPrefix(trimmed, "-") {
-			return nil, fmt.Errorf("第 %d 行（区块「%s」）：列表项必须以 '-' 开头", line.Number, blockName)
-		}
-
-		rest := strings.TrimPrefix(trimmed, "-")
-		rest = strings.TrimSpace(rest)
-
-		if rest == "" {
-			return nil, fmt.Errorf("第 %d 行（区块「%s」）：列表项内容为空", line.Number, blockName)
-		}
-
-		key, value, ok := splitKeyValue(rest)
-		if !ok {
-			return nil, fmt.Errorf("第 %d 行（区块「%s」）：键值对格式错误，缺少 ':' 或 '：'", line.Number, blockName)
-		}
-		if key == "" {
-			return nil, fmt.Errorf("第 %d 行（区块「%s」）：键不能为空", line.Number, blockName)
-		}
-
-		result = append(result, domain.KeyValue{Key: key, Value: value})
+	entries, err := scanEntries(lines, blockName)
+	if err != nil {
+		return nil, err
 	}
 
+	var result []domain.KeyValue
+	for _, entry := range entries {
+		key, value, ok := splitKeyValue(entry.Raw)
+		if !ok {
+			return nil, fmt.Errorf("第 %d 行（区块「%s」）：键值对格式错误，缺少 ':' 或 '：'", entry.Line, blockName)
+		}
+		if key == "" {
+			return nil, fmt.Errorf("第 %d 行（区块「%s」）：键不能为空", entry.Line, blockName)
+		}
+		result = append(result, domain.KeyValue{Key: key, Value: value})
+	}
 	return result, nil
 }
 
@@ -147,31 +171,15 @@ func parseStateBlock(lines []Line, blockName string) ([]domain.KeyValue, error) 
 // 不解析键值对，整行内容作为字符串值。
 // 记忆是系统区块，由程序自动生成，但解析器保留读取能力（用于加载子版）。
 func parsePlainList(lines []Line, blockName string) ([]string, error) {
-	var result []string
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line.Text)
-
-		// 跳过空行和注释行
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-
-		// 必须以 "-" 开头
-		if !strings.HasPrefix(trimmed, "-") {
-			return nil, fmt.Errorf("第 %d 行（区块「%s」）：列表项必须以 '-' 开头", line.Number, blockName)
-		}
-
-		value := strings.TrimPrefix(trimmed, "-")
-		value = strings.TrimSpace(value)
-
-		if value == "" {
-			return nil, fmt.Errorf("第 %d 行（区块「%s」）：列表项内容为空", line.Number, blockName)
-		}
-
-		result = append(result, value)
+	entries, err := scanEntries(lines, blockName)
+	if err != nil {
+		return nil, err
 	}
 
+	result := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		result = append(result, entry.Raw)
+	}
 	return result, nil
 }
 
@@ -286,64 +294,36 @@ func parseRuleLine(line string, lineNumber int, blockName string) (*domain.Rule,
 // 为什么支持 \n 转义？因为历史内容可能包含多行文本，
 // 但 .meph 是纯文本格式，用 \n 表示换行是通用的做法。
 func parseHistory(lines []Line, blockName string) ([]domain.HistoryEntry, error) {
-	var result []domain.HistoryEntry
+    entries, err := scanEntries(lines, blockName)
+    if err != nil {
+        return nil, err
+    }
 
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line.Text)
+    var result []domain.HistoryEntry
+    for _, entry := range entries {
+        var role, content string
+        var ok bool
 
-		// 跳过空行和注释行
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
+        if strings.HasPrefix(entry.Raw, "fate:") || strings.HasPrefix(entry.Raw, "fate：") {
+            role = "fate"
+            content = strings.TrimPrefix(strings.TrimPrefix(entry.Raw, "fate:"), "fate：")
+            content = strings.TrimSpace(content)
+            ok = true
+        } else if strings.HasPrefix(entry.Raw, "assistant:") || strings.HasPrefix(entry.Raw, "assistant：") {
+            role = "assistant"
+            content = strings.TrimPrefix(strings.TrimPrefix(entry.Raw, "assistant:"), "assistant：")
+            content = strings.TrimSpace(content)
+            ok = true
+        }
 
-		// 必须以 "-" 开头
-		if !strings.HasPrefix(trimmed, "-") {
-			return nil, fmt.Errorf("第 %d 行（区块「%s」）：列表项必须以 '-' 开头", line.Number, blockName)
-		}
+        if !ok {
+            return nil, fmt.Errorf("第 %d 行（区块「%s」）：历史条目必须以 'fate:' 或 'assistant:' 开头", entry.Line, blockName)
+        }
 
-		// 去掉 "- " 前缀
-		rest := strings.TrimPrefix(trimmed, "-")
-		rest = strings.TrimSpace(rest)
-
-		if rest == "" {
-			return nil, fmt.Errorf("第 %d 行（区块「%s」）：历史条目内容为空", line.Number, blockName)
-		}
-
-		// ---- 关键修复：硬匹配 fate: 或 assistant: 前缀 ----
-		// 而不是使用 splitKeyValue（会被内容中的冒号干扰）
-		var role, contentText string
-		var ok bool
-
-		if strings.HasPrefix(rest, "fate:") || strings.HasPrefix(rest, "fate：") {
-			role = "fate"
-			contentText = strings.TrimPrefix(strings.TrimPrefix(rest, "fate:"), "fate：")
-			contentText = strings.TrimSpace(contentText)
-			ok = true
-		} else if strings.HasPrefix(rest, "assistant:") || strings.HasPrefix(rest, "assistant：") {
-			role = "assistant"
-			contentText = strings.TrimPrefix(strings.TrimPrefix(rest, "assistant:"), "assistant：")
-			contentText = strings.TrimSpace(contentText)
-			ok = true
-		}
-
-		if !ok {
-			return nil, fmt.Errorf("第 %d 行（区块「%s」）：历史条目必须以 'fate:' 或 'assistant:' 开头", line.Number, blockName)
-		}
-
-		if role == "" || contentText == "" {
-			return nil, fmt.Errorf("第 %d 行（区块「%s」）：角色或内容不能为空", line.Number, blockName)
-		}
-
-		// 反转义换行符
-		contentText = strings.ReplaceAll(contentText, "\\n", "\n")
-
-		result = append(result, domain.HistoryEntry{
-			Role:    role,
-			Content: contentText,
-		})
-	}
-
-	return result, nil
+        content = strings.ReplaceAll(content, "\\n", "\n")
+        result = append(result, domain.HistoryEntry{Role: role, Content: content})
+    }
+    return result, nil
 }
 
 // ============================================================

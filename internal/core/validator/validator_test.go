@@ -108,9 +108,9 @@ func TestValidate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := Validate(tt.contract)
-			if result.IsValid() == tt.wantErr {
-				t.Errorf("Validate() isValid = %v, wantErr %v\n%v", result.IsValid(), tt.wantErr, result.List())
+			errs := Validate(tt.contract)
+			if (len(errs) > 0) != tt.wantErr {
+				t.Errorf("Validate() errs = %v, wantErr %v", errs, tt.wantErr)
 			}
 		})
 	}

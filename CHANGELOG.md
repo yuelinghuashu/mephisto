@@ -5,6 +5,66 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [v1.0.0] — 2026-07-21
+
+### 🎯 正式稳定版发布
+
+> **v1.0.0 是梅菲斯特的第一个正式稳定版本。**
+>
+> 经过 v0.5.0 的彻底重构和后续的精简优化，核心引擎已具备生产级稳定性。
+
+### 🏗️ 架构精简（"减即是增"）
+
+> v1.0.0 的核心使命是 **"去掉不必要的抽象，让代码回归简单"**。
+
+**删除中间层**
+
+- **移除 `orchestrator.go`**：`Engine` 直接持有 `Runtime`，消除"门面→编排→运行时"的三层委托
+- **移除 `interfaces.go`**：`ConditionEvaluator` 和 `ActionExecutor` 接口被删除，替换为直接函数（`evalCondition`、`ExecuteAction`）
+- **移除 `loader.go` 和 `saver.go`**：存档逻辑统一整合到 `save.go`
+
+**文件合并**
+
+- **`evaluator.go` + `executor.go`** → `rules.go`（条件评估 + 规则匹配 + 动作执行统一管理）
+- **`strings.go` + `template.go` + `convert.go`** → `convert.go`（三个工具文件合并为一个）
+- **`flags.go`** → 配置逻辑并入 `config.go`
+
+**接口简化**
+
+- **`validator.Result` 结构体被移除**：`Validate()` 直接返回 `[]ValidationError`
+- **`Engine` 方法减少**：`Save`、`LoadChildData`、`BuildChildPath` 集中到 `save.go`，`engine.go` 只保留核心叙事流程
+
+### ✨ 新增特性
+
+- **`mephisto check` 子命令**（为 VSCode 插件预留）
+  - 极速静态检查，不加载 LLM
+  - 输出 JSON 格式诊断信息（`valid`、`errors`、`outline`）
+  - 支持解析失败时返回结构化错误
+
+- **环境变量扩展白名单**
+  - `MEPHISTO_EXTRA_BLOCKS`：支持用户自定义区块名（逗号分隔）
+  - 自定义区块可被解析器识别，默认被静默忽略（适合备忘、草稿、注释）
+
+- **骰子表达式重新集成**
+  - `roll(1d100)`、`roll(2d6)`、`roll(1d20)`、`roll(3d10)` 语法恢复
+  - 判定规则：结果 >= (骰子数 × 面数 / 2) 时返回 true
+  - 使用 Go 1.22+ `math/rand/v2` 自动随机种子
+
+- **`BuildPrompt` 语义修正**
+  - 新增 `currentMemories` 参数，LLM 现在能感知**运行时动态累积的记忆**
+  - 修复了之前只使用契约初始记忆导致的“记忆丢失”问题
+
+### ⚡ 性能优化
+
+- **升级 `math/rand` → `math/rand/v2`**：自动初始化随机种子，消除手动 `rand.Seed()`
+
+### 🔧 修复
+
+- **修复默认响应空格问题**：无角色名时的默认响应从 `"角色 沉默地注视着命运。"` 修正为 `"角色沉默地注视着命运。"`
+- **修复输出检查函数未使用参数**：`outputCheckError` 的 `filename` 参数被移除
+- **修复 `buildOutline` 行号计算**：规则子项的行号准确指向 `rule.Line`
+- **修复 `integration_test.go` 中缺失的记忆验证**：`TestIntegrationStatePersistence` 现在正确检查记忆内容
+
 ## [v0.5.0] — 2026-07-19
 
 ### 🏗️ 架构重构

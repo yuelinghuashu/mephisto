@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.5.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-v1.0.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/Go-1.23+-00ADD8" alt="Go Version">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
 </p>
@@ -30,18 +30,58 @@
 - 💾 **记忆编织**：智能提取关键事件、自动压缩摘要、长期记忆持久化
 - 📂 **子版存档**：每轮自动保存，支持多分支故事线，直接运行子版自动覆盖
 - 🎯 **命运视角**：你是“命运”（叙事的推动者），输入指令，驱动角色行动
-- 🧪 **契约测试**：Golden File 测试保障解析器稳定性
+- 🔧 **VSCode 友好**：`mephisto check` 子命令提供 JSON 格式诊断，为编辑器插件铺路
 
 ---
 
 ## ⚖️ 立约（快速开始）
 
-### 1. 铭刻密钥（配置 API Key）
+### 1. 配置大模型 API
+
+Mephisto 支持三种 LLM 后端，选择其中一种即可。
+
+#### 选项 A：DeepSeek（推荐，开箱即用）
+
+在项目根目录创建 `.env` 文件：
 
 ```bash
-# 在项目根目录创建 .env 文件
-echo 'OPENAI_API_KEY=sk-你的OpenAI API密钥' > .env
+# 选择客户端类型和模型
+MEPHISTO_CLIENT=openai
+MEPHISTO_MODEL=deepseek-v4-flash
+
+# 【必填】填入你的 DeepSeek API Key
+OPENAI_API_KEY=sk-你的DeepSeek密钥
+
+# 【可选】API 基础 URL（使用官方服务时无需修改）
+# OPENAI_BASE_URL=https://api.deepseek.com/v1
 ```
+
+#### 选项 B：OpenAI
+
+```bash
+# 选择客户端类型和模型
+MEPHISTO_CLIENT=openai
+MEPHISTO_MODEL=gpt-4o-mini
+
+# 【必填】填入你的 OpenAI API Key
+OPENAI_API_KEY=sk-你的OpenAI密钥
+
+# 【可选】API 基础 URL（使用官方服务时无需修改）
+# OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
+#### 选项 C：Ollama（完全离线，免费）
+
+```bash
+# 选择客户端类型和本地模型
+MEPHISTO_CLIENT=ollama
+MEPHISTO_MODEL=llama3.2
+
+# 无需 API Key
+# 确保 Ollama 服务已启动：ollama serve
+```
+
+> **配置说明**：你也可以直接在命令行中传入这些参数，优先级为：**命令行参数 > 环境变量 > `.env` 文件**。
 
 ### 2. 构建并运行
 
@@ -110,6 +150,7 @@ go build -o mephisto ./cmd/mephisto
 子命令:
   parse <文件路径> [选项]   # 解析 .meph 契约，输出 JSON
   run <文件路径> [选项]     # 启动交互式对话模式
+  check <文件路径>          # 快速检查契约（输出 JSON，供 VSCode 调用）
   version                   # 显示版本信息
   help                      # 显示帮助信息
 
@@ -124,6 +165,7 @@ run 子命令选项:
   -client <类型>           LLM 客户端类型: deepseek, openai, ollama
   -api-key <密钥>          API 密钥（默认从 OPENAI_API_KEY 读取）
   -base-url <URL>          API 基础 URL（默认从 OPENAI_BASE_URL 读取）
+  -debug                   启用规则调试模式（显示规则匹配过程）
 
 parse 子命令选项:
   -o, -output <路径>       输出到文件（默认输出到 stdout）
@@ -133,7 +175,8 @@ parse 子命令选项:
   OPENAI_API_KEY           API 密钥（优先级低于命令行）
   OPENAI_BASE_URL          API 基础 URL
   MEPHISTO_MODEL           模型名称
-  MEPHISTO_CLIENT          客户端类型（openai/ollama）
+  MEPHISTO_CLIENT          客户端类型（deepseek/openai/ollama）
+  MEPHISTO_EXTRA_BLOCKS    自定义区块名（逗号分隔，如"设定集,草稿"）
 ```
 
 ---
@@ -145,19 +188,20 @@ mephisto/
 ├── cmd/
 │   └── mephisto/          # CLI 入口
 │       ├── main.go
-│       ├── help.go
+│       ├── config.go      # 配置加载（环境变量 + 命令行参数）
+│       ├── commands.go    # 子命令执行逻辑
+│       ├── session.go     # 交互式会话
 │       ├── output.go
-│       ├── flags.go
-│       ├── session.go
+│       ├── help.go
 │       └── utils.go
 ├── internal/
 │   ├── core/              # 核心层
-│   │   ├── parser/        # 契约解析器
-│   │   ├── engine/        # 规则引擎
-│   │   ├── llm/           # LLM 客户端
+│   │   ├── parser/        # 契约解析器（lexer + parser + parse_block）
+│   │   ├── engine/        # 叙事引擎（engine + rules + runtime + memory + save）
+│   │   ├── llm/           # LLM 客户端（openai + ollama + prompt）
 │   │   └── validator/     # 契约验证器
-│   ├── domain/            # 领域模型
-│   └── shared/            # 共享工具
+│   ├── domain/            # 领域模型（Contract、Rule、HistoryEntry）
+│   └── shared/            # 共享工具（convert.go）
 ├── data/                  # 示例契约文件
 ├── docs/                  # 完整文档
 └── assets/                # Logo 资源
@@ -167,7 +211,7 @@ mephisto/
 
 ## 📦 环境要求
 
-- Go 1.23+（推荐 1.24+）
+- Go 1.23+（推荐 1.26+）
 
 ---
 

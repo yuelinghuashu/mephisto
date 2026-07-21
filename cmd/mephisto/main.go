@@ -14,8 +14,8 @@ func main() {
 	// ---- 加载 .env 文件（如果存在） ----
 	_ = godotenv.Load() // 忽略错误，文件不存在也不影响
 
-	// 解析命令行参数
-	cfg := parseFlags()
+	// 解析命令行参数（直接使用 LoadConfig）
+	cfg := LoadConfig()
 
 	// 根据命令类型执行
 	switch cfg.Command {
@@ -36,6 +36,13 @@ func main() {
 
 	case CmdRun:
 		if err := runInteractive(cfg); err != nil {
+			printError(err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+
+	case CmdCheck:
+		if err := runCheck(cfg); err != nil {
 			printError(err)
 			os.Exit(1)
 		}

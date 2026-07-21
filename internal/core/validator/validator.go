@@ -1,73 +1,65 @@
 // internal/core/validator/validator.go
 //
-// 本文件提供契约验证功能。
+// 契约验证：结构完整性和必填项检查。
 //
-// 验证器的职责边界：
-//  1. 结构完整性检查   —— 必填字段是否存在（如角色名）
-//  2. 类型安全检查     —— 值是否为合法类型（string/int/float/bool）
-//  3. 规则完整性检查   —— 规则名、条件、动作是否为空
+// 职责范围（只做两件事）：
+//  1. 角色名是否为空（必填）
+//  2. 规则名/条件/动作是否为空（完整性）
 //
-// 验证器不负责：
-//   - 业务值范围检查   —— 生命值是否为正数、堕落指数是否在 0-100 等
-//   - 业务逻辑验证     —— 规则互斥组是否冲突、规则条件是否合理等
-//
-// 为什么只做这些？
-//
-//	业务规则是项目特有的，会随需求变化。Mephisto 作为解析器，
-//	只保证数据“格式正确”，不干涉“业务正确”。
-//	具体的业务约束（如生命值必须 > 0）应由上层应用（Engine）自行校验。
+// 不负责业务值验证（如堕落指数 0-100），那是引擎层的职责。
 package validator
 
 import (
 	"fmt"
+	"strings"
+
 	"mephisto/internal/domain"
 )
 
 // ValidationError 表示一个验证错误。
 type ValidationError struct {
-	Field   string // 错误字段的路径（如 "State.生命值"），便于定位
-	Message string // 人类可读的错误描述
-	Value   any    // 触发错误的实际值（可选），便于调试
+	Field   string // 错误字段路径
+	Message string // 错误描述
 }
 
 // Error 实现 error 接口。
-// 当 Value 不为空时，错误信息会包含实际值
 func (e ValidationError) Error() string {
-	if e.Value != nil {
-		return fmt.Sprintf("%s: %s (当前值: %v)", e.Field, e.Message, e.Value)
-	}
 	return fmt.Sprintf("%s: %s", e.Field, e.Message)
-}
-
-// Result 表示验证结果。
-type Result struct {
-	Errors []ValidationError
-}
-
-// IsValid 返回验证是否通过（无错误）。
-func (r Result) IsValid() bool {
-	return len(r.Errors) == 0
-}
-
-// List 返回所有验证错误
-func (r Result) List() []ValidationError {
-	return r.Errors
 }
 
 // Validate 验证 Contract 的数据完整性。
 //
-// 执行顺序：
-//  1. 角色名验证（必填）
-//  2. 状态类型验证（值类型合法性）
-//  3. 规则完整性验证（名称/条件/动作非空）
-//
-// 返回值：Result，包含所有验证错误（如有）。
-func Validate(contract *domain.Contract) Result {
-	var errors []ValidationError
+// 返回值：[]ValidationError，空切片表示验证通过。
+func Validate(contract *domain.Contract) []ValidationError {
+	var errs []ValidationError
 
-	errors = append(errors, validateRoleName(contract)...)
-	errors = append(errors, validateStateTypes(contract)...)
-	errors = append(errors, validateRules(contract)...)
+	// 1. 角色名必填
+	if strings.TrimSpace(contract.RoleName) == "" {
+		errs = append(errs, ValidationError{Field: "RoleName", Message: "角色名不能为空"})
+	}
 
-	return Result{Errors: errors}
+	// 2. 规则完整性检查
+	for _, rule := range contract.Rules {
+		if strings.TrimSpace(rule.Name) == "" {
+			errs = append(errs, ValidationError{
+				Field:   "Name",
+				Message: fmt.Sprintf("第 %d 行：规则名不能为空", rule.Line),
+			})
+			continue
+		}
+		if strings.TrimSpace(rule.Cond) == "" {
+			errs = append(errs, ValidationError{
+				Field:   "Cond",
+				Message: fmt.Sprintf("第 %d 行：条件不能为空", rule.Line),
+			})
+		}
+		if strings.TrimSpace(rule.Action) == "" {
+			errs = append(errs, ValidationError{
+				Field:   "Action",
+				Message: fmt.Sprintf("第 %d 行：动作不能为空", rule.Line),
+			})
+		}
+	}
+
+	return errs
 }

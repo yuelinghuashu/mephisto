@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 )
@@ -23,8 +22,9 @@ type OpenAIClient struct {
 }
 
 // OpenAIConfig 配置 OpenAI/DeepSeek 客户端。
+// 注意：APIKey 由调用方显式提供，不再从环境变量自动读取。
 type OpenAIConfig struct {
-	APIKey    string        // API 密钥
+	APIKey    string        // API 密钥（必填）
 	BaseURL   string        // API 基础 URL，默认 https://api.deepseek.com/v1
 	Model     string        // 模型名称，默认 deepseek-v4-flash
 	MaxTokens int           // 最大生成 Token 数，默认 4096
@@ -32,10 +32,8 @@ type OpenAIConfig struct {
 }
 
 // NewOpenAIClient 创建 OpenAI/DeepSeek 客户端。
+// 注意：APIKey 必须由调用方提供，不再从环境变量自动回退。
 func NewOpenAIClient(cfg OpenAIConfig) *OpenAIClient {
-	if cfg.APIKey == "" {
-		cfg.APIKey = os.Getenv("OPENAI_API_KEY")
-	}
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = "https://api.deepseek.com/v1"
 	}
@@ -66,29 +64,29 @@ func (c *OpenAIClient) Generate(ctx context.Context, prompt string) (string, err
 		"model":      c.config.Model,
 		"messages":   []map[string]string{{"role": "user", "content": prompt}},
 		"stream":     false,
-		"max_tokens": c.config.MaxTokens, // 使用配置值，不再硬编码
+		"max_tokens": c.config.MaxTokens,
 	}
 
 	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", fmt.Errorf("序列化请求失败: %w", err)
+		return "", fmt.Errorf("序列化请求失败：%w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", c.chatEndpoint(), bytes.NewReader(jsonBody))
 	if err != nil {
-		return "", fmt.Errorf("创建请求失败: %w", err)
+		return "", fmt.Errorf("创建请求失败：%w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.config.APIKey)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("请求失败: %w", err)
+		return "", fmt.Errorf("请求失败：%w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("API 返回错误: %s", resp.Status)
+		return "", fmt.Errorf("API 返回错误：%s", resp.Status)
 	}
 
 	var result struct {
@@ -99,7 +97,7 @@ func (c *OpenAIClient) Generate(ctx context.Context, prompt string) (string, err
 		} `json:"choices"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("解析响应失败: %w", err)
+		return "", fmt.Errorf("解析响应失败：%w", err)
 	}
 
 	if len(result.Choices) == 0 {
@@ -115,29 +113,29 @@ func (c *OpenAIClient) GenerateStream(ctx context.Context, prompt string, callba
 		"model":      c.config.Model,
 		"messages":   []map[string]string{{"role": "user", "content": prompt}},
 		"stream":     true,
-		"max_tokens": c.config.MaxTokens, // 使用配置值，不再硬编码
+		"max_tokens": c.config.MaxTokens,
 	}
 
 	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", fmt.Errorf("序列化请求失败: %w", err)
+		return "", fmt.Errorf("序列化请求失败：%w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", c.chatEndpoint(), bytes.NewReader(jsonBody))
 	if err != nil {
-		return "", fmt.Errorf("创建请求失败: %w", err)
+		return "", fmt.Errorf("创建请求失败：%w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.config.APIKey)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("请求失败: %w", err)
+		return "", fmt.Errorf("请求失败：%w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("API 返回错误: %s", resp.Status)
+		return "", fmt.Errorf("API 返回错误：%s", resp.Status)
 	}
 
 	var fullResponse strings.Builder
@@ -172,7 +170,7 @@ func (c *OpenAIClient) GenerateStream(ctx context.Context, prompt string, callba
 	}
 
 	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("读取流式响应失败: %w", err)
+		return "", fmt.Errorf("读取流式响应失败：%w", err)
 	}
 
 	return strings.TrimSpace(fullResponse.String()), nil

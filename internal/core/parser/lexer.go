@@ -10,16 +10,16 @@
 //  4. 已知区块名被严格限制（白名单），避免拼写错误导致的隐式 bug。
 //  5. 内容行在 lexer 阶段就带上绝对行号，避免 parser 重复计算。
 //
-// 与 parse_block.go 的分工：
+// 白名单扩展：
 //
-//	Lexer（本文件）  ：负责"切分"——识别标题，将内容按行分组。
-//	Parser（parse_block.go）：负责"解析"——将原始行内容转换为结构化数据。
-//
-// 这种分层设计使得"切分"和"解析"职责分离，便于独立测试和修改。
+//	通过环境变量 MEPHISTO_EXTRA_BLOCKS 可以添加额外的区块名，
+//	多个区块名用逗号分隔。例如：
+//	export MEPHISTO_EXTRA_BLOCKS="自定义区块1,自定义区块2"
 package parser
 
 import (
 	"fmt"
+	"os"
 	"strings"
 )
 
@@ -69,27 +69,55 @@ type Block struct {
 	Line    int
 }
 
-// knownBlocks 是已知区块名的白名单集合。
+// getKnownBlocks 返回已知区块名的白名单。
+//
+// 基础白名单包含 10 个标准区块：
+//
+//	角色名、锚点、世界观、角色背景、开局场景、状态、规则、校验、记忆、历史
+//
+// 扩展方式：
+//
+//	通过环境变量 MEPHISTO_EXTRA_BLOCKS 添加额外区块名，
+//	多个区块名用逗号分隔（会去除首尾空格）。
 //
 // 为什么使用 map[string]bool 作为白名单？
 //  1. 显式列出所有合法区块名，防止拼写错误导致的隐式 bug。
-//     （例如用户写了 "脚色名" 而不是 "角色名"，会被识别为普通内容而非区块）
 //  2. O(1) 查找，性能优异。
-//  3. 便于维护：新增区块只需在此添加一行。
+//  3. 环境变量扩展支持自定义区块，无需修改代码。
+func getKnownBlocks() map[string]bool {
+	// 基础白名单
+	base := map[string]bool{
+		"角色名":  true,
+		"锚点":   true,
+		"世界观":  true,
+		"角色背景": true,
+		"开局场景": true,
+		"状态":   true,
+		"规则":   true,
+		"校验":   true,
+		"记忆":   true,
+		"历史":   true,
+	}
+
+	// 从环境变量加载额外区块
+	if extra := os.Getenv("MEPHISTO_EXTRA_BLOCKS"); extra != "" {
+		for name := range strings.SplitSeq(extra, ",") {
+			name = strings.TrimSpace(name)
+			if name != "" {
+				base[name] = true
+			}
+		}
+	}
+
+	return base
+}
+
+// isKnownBlock 检查区块名是否在白名单中。
 //
-// 如果需要扩展为"注册表模式"（支持自定义区块），
-// 可以在此处引入插件机制，但当前需求下白名单已足够。
-var knownBlocks = map[string]bool{
-	"角色名":  true,
-	"锚点":   true,
-	"世界观":  true,
-	"角色背景": true,
-	"开局场景": true,
-	"状态":   true,
-	"规则":   true,
-	"校验":   true,
-	"记忆":   true,
-	"历史":   true,
+// 每次调用都会重新读取环境变量，支持运行时动态调整。
+// 如果性能敏感，可以缓存结果，但考虑到 Lex 只执行一次，当前实现足够。
+func isKnownBlock(name string) bool {
+	return getKnownBlocks()[name]
 }
 
 // Lex 将 .meph 文本切分为区块列表。
@@ -123,27 +151,19 @@ var knownBlocks = map[string]bool{
 //   - 最后一个区块后有空行 → 跳过，不影响
 //   - 标题行后立即跟下一个标题 → 第一个区块的 Content 为空（合法）
 //   - 文件中没有任何区块 → 报错 "没有有效区块"
-//
-// 与重构前的重要变化：
-//
-//	每个内容行在存储时都附带绝对行号（Line.Number），
-//	这使得 parser 无需自行计算行号，简化了 parse_block.go 的逻辑。
 func Lex(text string) ([]Block, error) {
 	lines := strings.Split(text, "\n")
 
-	var blocks []Block             // 所有已完成的区块
-	var currentBlockTitle string   // 当前正在收集的区块标题
-	var currentBlockContent []Line // 当前正在收集的区块内容（带行号）
-	var currentBlockLine int       // 当前区块标题的行号
-
+	var blocks []Block
+	var currentBlockTitle string
+	var currentBlockContent []Line
+	var currentBlockLine int
 	inBlock := false
 
 	for i, line := range lines {
 		lineNumber := i + 1
 
 		// ---- 处理区块外的空行 ----
-		// 如果不在任何区块内，且当前行是空行（或仅空白），则跳过。
-		// 这样允许文件开头、区块之间、文件末尾存在空行作为视觉分隔。
 		if !inBlock && strings.TrimSpace(line) == "" {
 			continue
 		}
@@ -159,9 +179,9 @@ func Lex(text string) ([]Block, error) {
 				})
 			}
 
-			// 开始新的区块：记录标题、清空内容、标记 inBlock
+			// 开始新的区块
 			currentBlockTitle = title
-			currentBlockContent = []Line{} // 清空
+			currentBlockContent = []Line{}
 			currentBlockLine = lineNumber
 			inBlock = true
 			continue
@@ -169,13 +189,10 @@ func Lex(text string) ([]Block, error) {
 
 		// ---- 非标题行处理 ----
 		if !inBlock {
-			// 在区块外遇到非空内容：这是格式错误
 			return nil, fmt.Errorf("第 %d 行：内容出现在任何区块之外", lineNumber)
 		}
 
 		// 在区块内：累加当前行到内容缓存
-		// 注意：这里保存的是原始行（包括缩进和空格），
-		// 同时记录该行的绝对行号，供 parser 错误报告使用。
 		currentBlockContent = append(currentBlockContent, Line{
 			Text:   line,
 			Number: lineNumber,
@@ -183,7 +200,6 @@ func Lex(text string) ([]Block, error) {
 	}
 
 	// ---- 保存最后一个区块 ----
-	// 循环结束后，如果 inBlock == true，说明最后一个区块尚未保存。
 	if inBlock {
 		blocks = append(blocks, Block{
 			Title:   currentBlockTitle,
@@ -193,7 +209,6 @@ func Lex(text string) ([]Block, error) {
 	}
 
 	// ---- 校验：至少有一个区块 ----
-	// 一个合法的 .meph 文件至少应该包含一个区块（通常是"角色名"）。
 	if len(blocks) == 0 {
 		return nil, fmt.Errorf("没有有效区块")
 	}
@@ -210,21 +225,12 @@ func Lex(text string) ([]Block, error) {
 //  1. 去除首尾空白后，必须以 【 开头，以 】 结尾。
 //  2. 提取 【 和 】 之间的内容，去除首尾空白。
 //  3. 标题不能为空字符串。
-//  4. 标题必须在 knownBlocks 白名单中。
+//  4. 标题必须在白名单中（基础 + 环境变量扩展）。
 //
 // 为什么同时检查格式和白名单？
 //   - 格式检查（【】）确保标题行的基本形态正确。
-//   - 白名单检查（knownBlocks）确保标题是预定义的合法值。
-//   - 两者结合，既避免了"伪标题"（如普通文本中出现的 【xxx】）被误判，
-//     也避免了拼写错误导致的不可预期行为。
-//
-// 示例：
-//
-//	"【角色名】"    → ("角色名", true)
-//	"【锚点】"      → ("锚点", true)
-//	"【未知区块】"  → ("", false)  // 不在白名单中
-//	"【角色名"      → ("", false)  // 缺少闭合】
-//	"角色名"        → ("", false)  // 缺少【】
+//   - 白名单检查确保标题是预定义的合法值。
+//   - 两者结合，既避免了"伪标题"被误判，也避免了拼写错误。
 func isBlockTitle(line string) (string, bool) {
 	trimmed := strings.TrimSpace(line)
 
@@ -233,31 +239,19 @@ func isBlockTitle(line string) (string, bool) {
 		return "", false
 	}
 
-	// 提取区块标题（去掉前后的 【 和 】）
+	// 提取区块标题
 	title := strings.TrimPrefix(trimmed, "【")
 	title = strings.TrimSuffix(title, "】")
 	title = strings.TrimSpace(title)
 
-	// 标题不能为空
 	if title == "" {
 		return "", false
 	}
 
-	// 必须在白名单中
+	// 必须在白名单中（基础 + 环境变量扩展）
 	if !isKnownBlock(title) {
 		return "", false
 	}
 
 	return title, true
-}
-
-// isKnownBlock 检查区块名是否在已知列表中。
-//
-// 这是白名单检查的具体实现。
-// 将白名单独立为函数的好处：
-//  1. 便于 isBlockTitle 调用，语义清晰。
-//  2. 如果未来需要从配置文件加载白名单，只需修改此函数。
-//  3. 便于单元测试（可以单独测试白名单逻辑）。
-func isKnownBlock(name string) bool {
-	return knownBlocks[name]
 }

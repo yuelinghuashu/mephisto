@@ -5,10 +5,8 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/AlecAivazis/survey/v2"
 
@@ -35,15 +33,6 @@ type Session struct {
 }
 
 // NewSession 创建交互会话实例。
-//
-// 参数：
-//   - eng    : 已初始化的引擎实例
-//   - filename: 母版文件路径
-//   - branch : 分支名
-//   - reset  : 是否忽略子版存档
-//
-// 返回值：
-//   - *Session: 可用的会话实例
 func NewSession(eng *engine.Engine, filename string, branch string, reset bool) *Session {
 	return &Session{
 		engine:   eng,
@@ -63,10 +52,6 @@ func NewSession(eng *engine.Engine, filename string, branch string, reset bool) 
 //  5. 进入对话循环
 //  6. 每轮对话后自动保存
 //  7. 支持 /save 手动保存
-//  8. 每轮对话后处理记忆提取
-//
-// 返回值：
-//   - error: 会话执行过程中的错误
 func (s *Session) Start() error {
 	// ---- 1. 构建子版路径 ----
 	s.childPath = engine.BuildChildPath(s.filename, s.branch)
@@ -97,7 +82,6 @@ func (s *Session) Start() error {
 			}
 		}
 	} else {
-		// ---- 用户明确要求从母版重新开始 ----
 		fmt.Println("🔄 已忽略子版存档，从母版重新开始")
 		fmt.Println()
 	}
@@ -154,7 +138,7 @@ func (s *Session) Start() error {
 			}
 
 		default:
-			// ---- 7. 普通输入：交给引擎 ----
+			// ---- 7. 普通输入：交给引擎（引擎内部自动处理记忆提取） ----
 			s.handleInput(input)
 
 			// ---- 8. 每轮对话后自动保存 ----
@@ -166,14 +150,6 @@ func (s *Session) Start() error {
 }
 
 // printWelcome 打印会话欢迎信息。
-//
-// 展示内容包括：
-//   - 角色名
-//   - 首次启动（无子版）：锚点、世界观、角色背景、开局场景
-//   - 子版加载后：仅提示"已恢复进度"
-//   - 当前状态（始终显示）
-//   - 规则列表（始终显示）
-//   - 操作提示
 func (s *Session) printWelcome() {
 	contract := s.engine.Contract()
 	roleName := contract.RoleName
@@ -193,7 +169,6 @@ func (s *Session) printWelcome() {
 
 	// ---- 根据是否加载子版决定显示内容 ----
 	if !s.hasChild {
-		// ---- 首次启动（无子版）：显示完整信息 ----
 		if len(contract.Anchor) > 0 {
 			fmt.Println("【锚点】")
 			for _, kv := range contract.Anchor {
@@ -221,16 +196,14 @@ func (s *Session) printWelcome() {
 			fmt.Println()
 		}
 	} else {
-		// ---- 加载子版后：只显示提示，略过静态信息 ----
 		fmt.Println("💡 已恢复之前的进度，继续你的叙事旅程。")
 		fmt.Println()
 	}
 
-	// ---- 当前状态（始终显示，使用引擎的实际状态） ----
+	// ---- 当前状态 ----
 	state := s.engine.State()
 	if len(state) > 0 {
 		fmt.Println("【当前状态】")
-		// 按用户书写的顺序显示
 		for _, kv := range contract.State {
 			if val, ok := state[kv.Key]; ok {
 				fmt.Printf("  %s: %v\n", kv.Key, val)
@@ -241,7 +214,7 @@ func (s *Session) printWelcome() {
 		fmt.Println()
 	}
 
-	// ---- 规则列表（始终显示） ----
+	// ---- 规则列表 ----
 	if len(contract.Rules) > 0 {
 		fmt.Printf("【已加载的规则】%d 条\n", len(contract.Rules))
 		for _, rule := range contract.Rules {
@@ -262,34 +235,17 @@ func (s *Session) printWelcome() {
 // 命令判断方法
 // ============================================================
 
-// isSaveCommand 检查输入是否为保存命令。
-func (s *Session) isSaveCommand(input string) bool {
-	return input == "/save"
-}
-
-// isExitCommand 检查输入是否为退出命令。
+func (s *Session) isSaveCommand(input string) bool { return input == "/save" }
 func (s *Session) isExitCommand(input string) bool {
 	return input == "exit" || input == "quit" || input == "q"
 }
-
-// isStateCommand 检查输入是否为状态查看命令。
-func (s *Session) isStateCommand(input string) bool {
-	return input == "/state"
-}
-
-// isHistoryCommand 检查输入是否为历史查看命令。
-func (s *Session) isHistoryCommand(input string) bool {
-	return input == "/history"
-}
+func (s *Session) isStateCommand(input string) bool   { return input == "/state" }
+func (s *Session) isHistoryCommand(input string) bool { return input == "/history" }
 
 // ============================================================
 // 显示方法
 // ============================================================
 
-// showState 显示当前状态。
-//
-// 逐行输出引擎状态中的每个键值对，
-// 格式为 "  键: 值"，便于阅读。
 func (s *Session) showState() {
 	state := s.engine.State()
 	if len(state) == 0 {
@@ -302,12 +258,6 @@ func (s *Session) showState() {
 	}
 }
 
-// showHistory 显示对话历史。
-//
-// 逐行输出历史记录中的每一条，
-// 角色名会被转换为更友好的中文名称：
-//   - "fate" → "命运"
-//   - "assistant" → "角色"
 func (s *Session) showHistory() {
 	history := s.engine.History()
 	if len(history) == 0 {
@@ -336,17 +286,13 @@ func (s *Session) showHistory() {
 // 流程：
 //  1. 将用户输入传递给引擎，启用流式输出
 //  2. 响应流式输出完成后换行
-//  3. 触发记忆提取（使用独立 context，不阻塞主流程）
-//
-// 参数：
-//   - input: 用户的普通输入
+//  3. 引擎内部已自动处理记忆提取，无需外部调用
 func (s *Session) handleInput(input string) {
 	const indent = "　　"
 
 	needIndent := true
 	inParagraph := false
 
-	// ---- 流式回调 ----
 	onChunk := func(chunk string) {
 		for _, ch := range chunk {
 			if ch == '\n' {
@@ -364,7 +310,7 @@ func (s *Session) handleInput(input string) {
 		}
 	}
 
-	// ---- 执行引擎 ----
+	// ---- 执行引擎（内部自动处理记忆提取） ----
 	response, err := s.engine.Run(input, onChunk)
 	if err != nil {
 		fmt.Printf("\n❌ 错误: %v\n", err)
@@ -373,16 +319,5 @@ func (s *Session) handleInput(input string) {
 
 	if response != "" {
 		fmt.Println()
-	}
-
-	// ---- 记忆提取（独立 context，30 秒超时） ----
-	if s.engine != nil {
-		memCtx, memCancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer memCancel()
-
-		if err := s.engine.ProcessMemories(memCtx, input, response); err != nil {
-			// 记忆提取失败不中断对话，只记录提示
-			fmt.Printf("\n⚠️ 记忆提取失败: %v\n", err)
-		}
 	}
 }

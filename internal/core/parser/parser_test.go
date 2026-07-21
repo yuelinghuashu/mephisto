@@ -15,6 +15,7 @@ package parser
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -22,7 +23,6 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"mephisto/internal/domain"
-	"mephisto/internal/testutil"
 )
 
 // ============================================================
@@ -56,13 +56,13 @@ func saveGolden(path string, contract *domain.Contract) error {
 // 后续运行对比解析结果与 golden 文件。
 // 运行 `go test -update` 更新 golden 文件。
 func TestParseSample(t *testing.T) {
-	samplePath := testutil.GetTestDataPath("sample.meph")
+	samplePath := filepath.Join("testdata", "sample.meph")
 	got, err := ParseFile(samplePath)
 	if err != nil {
 		t.Fatalf("解析 sample.meph 失败: %v", err)
 	}
+	goldenPath := filepath.Join("testdata", "sample.golden")
 
-	goldenPath := testutil.GetTestDataPath("sample.golden")
 	var want domain.Contract
 
 	if err := loadGolden(goldenPath, &want); err != nil {
@@ -75,9 +75,7 @@ func TestParseSample(t *testing.T) {
 		t.FailNow()
 	}
 
-	// 比较时忽略 Rule.Compiled 字段（它是运行时填充的，测试中为空）
 	opts := []cmp.Option{
-		cmpopts.IgnoreFields(domain.Rule{}, "Compiled"),
 		cmpopts.EquateEmpty(),
 		cmp.Transformer("NormalizeNumbers", func(m map[string]any) map[string]any {
 			result := make(map[string]any)
@@ -109,13 +107,13 @@ func TestParseSample(t *testing.T) {
 func TestMain(m *testing.M) {
 	for _, arg := range os.Args {
 		if arg == "-update" {
-			// 重新生成 golden 文件
-			samplePath := testutil.GetTestDataPath("sample.meph")
+			// 重新生成 golden 文件（使用 parser 包自己的 testdata）
+			samplePath := filepath.Join("testdata", "sample.meph")
 			contract, err := ParseFile(samplePath)
 			if err != nil {
 				panic("解析 sample.meph 失败: " + err.Error())
 			}
-			goldenPath := testutil.GetTestDataPath("sample.golden")
+			goldenPath := filepath.Join("testdata", "sample.golden")
 			if err := saveGolden(goldenPath, contract); err != nil {
 				panic("保存 golden 文件失败: " + err.Error())
 			}
@@ -179,12 +177,12 @@ func TestParseErrors(t *testing.T) {
 		{
 			name:    "历史角色无效",
 			input:   "【历史】\n- system: 系统提示",
-			wantErr: "只能是 fate 或 assistant",
+			wantErr: "历史条目必须以 'fate:' 或 'assistant:' 开头",
 		},
 		{
 			name:    "历史缺少冒号",
 			input:   "【历史】\n- fate 你走入森林",
-			wantErr: "缺少 ':' 或 '：'",
+			wantErr: "历史条目必须以 'fate:' 或 'assistant:' 开头",
 		},
 		{
 			name:    "空角色名区块",
@@ -452,7 +450,7 @@ func TestParseRuleLine(t *testing.T) {
 			if err != nil {
 				return
 			}
-			if diff := cmp.Diff(tt.want, got, cmpopts.IgnoreFields(domain.Rule{}, "Compiled")); diff != "" {
+			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("结果不匹配 (-want +got):\n%s", diff)
 			}
 		})

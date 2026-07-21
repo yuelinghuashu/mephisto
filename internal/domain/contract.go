@@ -55,24 +55,17 @@ type KeyValue struct {
 	Value string `json:"value"`
 }
 
-// RuleDef 表示一条规则定义
+// Rule 表示一条规则定义
 type Rule struct {
 	Name   string `json:"name"`   // 规则名
 	Cond   string `json:"cond"`   // 条件原始字符串
 	Action string `json:"action"` // 动作原始字符串
 	Group  string `json:"group"`  // 互斥组名
 	Line   int    `json:"line"`   // 来源行号（报错定位）
-
-	Compiled Expr `json:"-"` // 预编译字段（运行时填充，不序列化）
 }
 
 // HistoryEntry 表示一条历史记录
 type HistoryEntry struct {
 	Role    string `json:"role"`    // "fate"（命运）或 "assistant"（角色）
 	Content string `json:"content"` // 对话内容
-}
-
-// Expr 是表达式接口（由 engine 包实现）
-type Expr interface {
-	Eval(env map[string]any) (any, error)
 }
