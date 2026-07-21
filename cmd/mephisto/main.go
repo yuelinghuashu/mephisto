@@ -20,14 +20,17 @@ func main() {
 	// 根据命令类型执行
 	switch cfg.Command {
 	case CmdVersion:
+		// 打印版本信息
 		printVersion()
 		os.Exit(0)
 
 	case CmdHelp:
+		// 打印帮助信息
 		printHelp()
 		os.Exit(0)
 
 	case CmdParse:
+		// 解析契约
 		if err := runParse(cfg); err != nil {
 			printError(err)
 			os.Exit(1)
@@ -35,6 +38,7 @@ func main() {
 		os.Exit(0)
 
 	case CmdRun:
+		// 运行交互式会话
 		if err := runInteractive(cfg); err != nil {
 			printError(err)
 			os.Exit(1)
@@ -42,6 +46,7 @@ func main() {
 		os.Exit(0)
 
 	case CmdCheck:
+		// 检查契约
 		if err := runCheck(cfg); err != nil {
 			printError(err)
 			os.Exit(1)

@@ -5,6 +5,41 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [v1.0.1] — 2026-07-21
+
+### 🐛 修复
+
+- **修复 Golden 文件 HTML 转义**：`json.MarshalIndent` 默认转义 `&` 为 `\u0026`，导致 `&&` 显示异常。改用 `json.Encoder` + `SetEscapeHTML(false)`
+- **修复帮助信息命令名硬编码**：`help.go` 中所有 `mephisto` 替换为 `os.Args[0]` 动态获取，支持任意调用方式（`./mephisto`、`/usr/local/bin/mephisto` 等）
+- **修复测试缓存导致骰子不变**：`go test -count=1` 强制真实运行
+
+### 🔧 清理
+
+- **删除【校验】区块**：功能已被【锚点】的「绝对禁忌」语义覆盖，区块从未被引擎消费
+- **删除 `validator` 包**：角色名非空、规则完整性检查已由 parser 在解析时完成，`Validate()` 完全冗余
+- **删除 `testutil` 包**：未在任何代码中被引用，完全的死代码
+- **删除 `internal/core/integration/testdata/`**：测试数据复用 `parser/testdata/sample.meph`
+
+### 🔧 重构
+
+- **CLI 子命令独立参数解析**：各子命令使用独立 `flag.FlagSet`，选项统一位于子命令后，支持文件路径在前/在后任意位置
+- **减少包数量**：`internal/core/` 从 4 个包减为 3 个（parser / engine / llm）
+
+### ✨ 改进
+
+- **骰子自定义阈值**：`roll(1d100) >= 80` 语法，用户可自定义成功阈值（支持 `>= > <= < == !=`）
+- **骰子结果影响 LLM 叙事**：骰子数值传递给 LLM 的 instruction，让 LLM 感知骰子结果并影响故事走向
+- **`slices.Clone` 替代手动克隆**：`runtime.go` 中 `append([]string{}, ...)` 简化为 `slices.Clone`
+- **`for range n` 循环**：`rules.go` 中骰子循环从 `for i := 0; i < count; i++` 简化为 `for range count`
+- **`t.TempDir()` 替代手动清理**：集成测试中 `os.CreateTemp` + `defer os.Remove` 简化为 `t.TempDir()`
+- **`TestDumpFormattedMeph` 测试**：新增测试验证变量替换、骰子结果注入
+
+### 🔧 修复
+
+- **README.md 更新**：Go 版本要求、CLI 选项、项目结构同步最新
+- **docs/RULES.md 更新**：删除不存在的 `LLM:` 动作类型，互斥组改为「规则修饰符」，骰子补充自定义阈值
+- **docs/SYNTAX.md 更新**：标准区块从 9 个改为 8 个（删除【校验】），删除不支持的 `LLM:` 示例
+
 ## [v1.0.0] — 2026-07-21
 
 ### 🎯 正式稳定版发布
@@ -52,7 +87,7 @@
 
 - **`BuildPrompt` 语义修正**
   - 新增 `currentMemories` 参数，LLM 现在能感知**运行时动态累积的记忆**
-  - 修复了之前只使用契约初始记忆导致的“记忆丢失”问题
+  - 修复了之前只使用契约初始记忆导致的"记忆丢失"问题
 
 ### ⚡ 性能优化
 
@@ -69,7 +104,7 @@
 
 ### 🏗️ 架构重构
 
-> **v0.5.0 是一次彻底的底层重构，也是梅菲斯特从“能跑的原型”到“可维护的系统”的转折点。**
+> **v0.5.0 是一次彻底的底层重构，也是梅菲斯特从"能跑的原型"到"可维护的系统"的转折点。**
 
 ### ✨ 新增
 
@@ -150,7 +185,7 @@
 
 - **错误信息增强**
   - 所有错误信息包含区块名 + 行号
-  - 格式统一为“第 X 行（区块「XXX」）：错误描述”
+  - 格式统一为"第 X 行（区块「XXX」）：错误描述"
 
 - **代码可测试性提升**
   - 核心模块全部可 mock
@@ -166,7 +201,7 @@
 
 - **修复状态类型不一致问题**
   - 状态值统一由 `shared.ParseValue` 转换（bool/int/float64/string）
-  - 消除 v0.4.0 中“同一状态在不同阶段类型不同”的问题
+  - 消除 v0.4.0 中"同一状态在不同阶段类型不同"的问题
 
 - **修复历史恢复时的角色识别**
   - 硬匹配 `fate:` 和 `assistant:` 前缀，避免内容中的冒号干扰解析

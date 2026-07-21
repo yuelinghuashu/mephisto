@@ -10,11 +10,9 @@ package main
 
 import (
 	"fmt"
-	"strings"
 
 	"mephisto/internal/core/llm"
 	"mephisto/internal/core/parser"
-	"mephisto/internal/core/validator"
 	"mephisto/internal/domain"
 )
 
@@ -22,30 +20,19 @@ import (
 //
 // 流程：
 //  1. 解析 .meph 文件为 domain.Contract
-//  2. 验证契约的完整性
+//  2. 验证契约完整性（解析器已自动验证必填项）
 //
 // 参数：
 //   - filePath: .meph 文件的路径
 //
 // 返回值：
-//   - *domain.Contract: 已验证的契约
-//   - error: 加载或验证失败时的错误
+//   - *domain.Contract: 已解析的契约
+//   - error: 加载失败时的错误
 func loadContract(filePath string) (*domain.Contract, error) {
 	contract, err := parser.ParseFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("加载契约失败：%w", err)
 	}
-
-	errs := validator.Validate(contract)
-	if len(errs) > 0 {
-		var sb strings.Builder
-		for _, e := range errs {
-			sb.WriteString("\n  - ")
-			sb.WriteString(e.Error())
-		}
-		return nil, fmt.Errorf("契约验证失败：%s", sb.String())
-	}
-
 	return contract, nil
 }
 

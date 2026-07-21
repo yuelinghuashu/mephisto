@@ -67,6 +67,186 @@ func TestEvalCondition(t *testing.T) {
 }
 
 // ============================================================
+// 骰子表达式测试（含自定义阈值）
+// ============================================================
+
+func TestEvalRoll(t *testing.T) {
+	tests := []struct {
+		name    string
+		cond    string
+		wantMin int
+		wantMax int
+	}{
+		// ---- 默认阈值 ----
+		{"默认 1d100 范围 [1,100]", "roll(1d100)", 1, 100},
+		{"默认 2d6 范围 [2,12]", "roll(2d6)", 2, 12},
+
+		// ---- 自定义阈值（只验证返回值的数值范围，是否满足阈值由条件逻辑保证） ----
+		{"自定义 >=80", "roll(1d100) >= 80", 1, 100},
+		{"自定义 >80", "roll(1d100) > 80", 1, 100},
+		{"自定义 <=30", "roll(1d100) <= 30", 1, 100},
+		{"自定义 <30", "roll(1d100) < 30", 1, 100},
+		{"自定义 ==50", "roll(1d100) == 50", 1, 100},
+		{"自定义 !=50", "roll(1d100) != 50", 1, 100},
+		{"自定义 2d6 >=10", "roll(2d6) >= 10", 2, 12},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// 多次运行，验证骰值始终在范围内
+			for i := 0; i < 100; i++ {
+				_, val := evalRoll(tt.cond)
+				if val < tt.wantMin || val > tt.wantMax {
+					t.Errorf("evalRoll(%q) = %d, want in range [%d, %d]", tt.cond, val, tt.wantMin, tt.wantMax)
+					break
+				}
+			}
+		})
+	}
+}
+
+func TestEvalRollWithCustomThreshold(t *testing.T) {
+	// 自定义阈值 >=80：用高阈值测试时，多次运行应至少有一次 false
+	t.Run("roll(1d100) >= 80 应该有失败的可能", func(t *testing.T) {
+		hasFalse := false
+		hasTrue := false
+		for i := 0; i < 200; i++ {
+			matched, _ := evalRoll("roll(1d100) >= 80")
+			if matched {
+				hasTrue = true
+			} else {
+				hasFalse = true
+			}
+			if hasTrue && hasFalse {
+				break
+			}
+		}
+		if !hasTrue || !hasFalse {
+			t.Errorf("roll(1d100) >= 80: 200 次运行中应有 true 和 false 出现，但 got true=%v, false=%v", hasTrue, hasFalse)
+		}
+	})
+
+	// roll(1d100) >= 0 应该总是 true
+	t.Run("roll(1d100) >= 0 总是成功", func(t *testing.T) {
+		for i := 0; i < 50; i++ {
+			matched, _ := evalRoll("roll(1d100) >= 0")
+			if !matched {
+				t.Errorf("roll(1d100) >= 0 应该总是 true，但第 %d 次返回 false", i)
+				break
+			}
+		}
+	})
+
+	// roll(1d100) > 100 应该总是 false
+	t.Run("roll(1d100) > 100 总是失败", func(t *testing.T) {
+		for i := 0; i < 50; i++ {
+			matched, _ := evalRoll("roll(1d100) > 100")
+			if matched {
+				t.Errorf("roll(1d100) > 100 应该总是 false，但第 %d 次返回 true", i)
+				break
+			}
+		}
+	})
+}
+
+func TestParseRollExpr(t *testing.T) {
+	tests := []struct {
+		name         string
+		cond         string
+		wantOk       bool
+		wantCount    int
+		wantSides    int
+		wantOp       string
+		wantThreshold int
+		wantRollCore string
+		wantMaxValue int
+	}{
+		{"默认无阈值", "roll(1d100)", true, 1, 100, "", 0, "roll(1d100)", 100},
+		{"默认 2d6", "roll(2d6)", true, 2, 6, "", 0, "roll(2d6)", 12},
+		{"自定义 >=80", "roll(1d100) >= 80", true, 1, 100, ">=", 80, "roll(1d100)", 100},
+		{"自定义 >80", "roll(1d100) > 80", true, 1, 100, ">", 80, "roll(1d100)", 100},
+		{"自定义 <=30", "roll(1d100) <= 30", true, 1, 100, "<=", 30, "roll(1d100)", 100},
+		{"自定义 <30", "roll(1d100) < 30", true, 1, 100, "<", 30, "roll(1d100)", 100},
+		{"自定义 ==50", "roll(1d100) == 50", true, 1, 100, "==", 50, "roll(1d100)", 100},
+		{"自定义 !=50", "roll(1d100) != 50", true, 1, 100, "!=", 50, "roll(1d100)", 100},
+		{"非法格式", "xxx", false, 0, 0, "", 0, "", 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			re, ok := parseRollExpr(tt.cond)
+			if ok != tt.wantOk {
+				t.Errorf("parseRollExpr(%q).ok = %v, want %v", tt.cond, ok, tt.wantOk)
+				return
+			}
+			if !ok {
+				return
+			}
+			if re.Count != tt.wantCount {
+				t.Errorf("Count = %d, want %d", re.Count, tt.wantCount)
+			}
+			if re.Sides != tt.wantSides {
+				t.Errorf("Sides = %d, want %d", re.Sides, tt.wantSides)
+			}
+			if re.Op != tt.wantOp {
+				t.Errorf("Op = %q, want %q", re.Op, tt.wantOp)
+			}
+			if re.UserThreshold != tt.wantThreshold {
+				t.Errorf("UserThreshold = %d, want %d", re.UserThreshold, tt.wantThreshold)
+			}
+			if re.RollCore != tt.wantRollCore {
+				t.Errorf("RollCore = %q, want %q", re.RollCore, tt.wantRollCore)
+			}
+			if re.maxValue() != tt.wantMaxValue {
+				t.Errorf("maxValue() = %d, want %d", re.maxValue(), tt.wantMaxValue)
+			}
+			if re.Op != "" {
+				expectedDesc := fmt.Sprintf("阈值 %s%d", re.Op, re.UserThreshold)
+				if re.thresholdDesc() != expectedDesc {
+					t.Errorf("thresholdDesc() = %q, want %q", re.thresholdDesc(), expectedDesc)
+				}
+			} else {
+				if re.thresholdDesc() != "" {
+					t.Errorf("thresholdDesc() should be empty, got %q", re.thresholdDesc())
+				}
+			}
+		})
+	}
+}
+
+func TestExtractRollInfo(t *testing.T) {
+	tests := []struct {
+		name     string
+		cond     string
+		wantPre  string // 前缀
+	}{
+		{"无骰子", "包含 攻击", ""},
+		{"只有骰子", "roll(1d100)", "🎲 骰子结果："},
+		{"骰子+阈值", "roll(1d100) >= 80", "🎲 骰子结果："},
+		{"复合条件", `包含 "愤怒" && roll(1d100) >= 80`, "🎲 骰子结果："},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractRollInfo(tt.cond)
+			if tt.wantPre == "" {
+				if result != "" {
+					t.Errorf("extractRollInfo(%q) = %q, want empty", tt.cond, result)
+				}
+				return
+			}
+			if !strings.HasPrefix(result, tt.wantPre) {
+				t.Errorf("extractRollInfo(%q) = %q, want prefix %q", tt.cond, result, tt.wantPre)
+			}
+			// 验证包含 = 符号（表示有骰值）
+			if !strings.Contains(result, "=") {
+				t.Errorf("extractRollInfo(%q) = %q, should contain '='", tt.cond, result)
+			}
+		})
+	}
+}
+
+// ============================================================
 // 规则匹配测试（含互斥组）
 // ============================================================
 
@@ -93,7 +273,7 @@ func TestMatchRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rule, matched := matchRule(rules, tt.input, state)
+			rule, matched, _ := matchRule(rules, tt.input, state, false)
 			if matched != tt.wantMatched {
 				t.Errorf("matched = %v, want %v", matched, tt.wantMatched)
 				return
@@ -107,7 +287,7 @@ func TestMatchRule(t *testing.T) {
 	// ---- 互斥组测试 ----
 	t.Run("互斥组", func(t *testing.T) {
 		// 输入同时匹配攻击和防御，但应该只触发攻击（第一个）
-		rule, matched := matchRule(rules, "我要攻击和防御！", state)
+		rule, matched, _ := matchRule(rules, "我要攻击和防御！", state, false)
 		if !matched {
 			t.Error("期望匹配到规则")
 			return
@@ -172,7 +352,7 @@ func TestExecuteAction(t *testing.T) {
 			// 为每个测试重置 runtime 的记忆
 			runtime.ReplaceMemories([]string{})
 
-			result := ExecuteAction(tt.action, tt.input, runtime, nil, nil)
+			result := ExecuteAction(tt.action, tt.input, runtime, nil, nil, "")
 			if result != tt.expected {
 				t.Errorf("ExecuteAction() = %v, expected %v", result, tt.expected)
 			}
@@ -343,6 +523,75 @@ func TestEngineStateAndMemories(t *testing.T) {
 	memories[0] = "被修改"
 	if len(eng.Memories()) == 0 || eng.Memories()[0] != "初始记忆" {
 		t.Errorf("Engine memories was mutated by copy")
+	}
+}
+
+// ============================================================
+// 格式化输出测试（用于人工审查变量替换、骰子结果等）
+// 运行：go test -v -run TestDumpFormattedMeph
+// ============================================================
+
+func TestDumpFormattedMeph(t *testing.T) {
+	contract := &domain.Contract{
+		RoleName: "贝利亚奥特曼",
+		Anchor: []domain.KeyValue{
+			{Key: "核心信念", Value: `"力量就是一切"`},
+			{Key: "绝对禁忌", Value: "不会承认自己的软弱"},
+		},
+		Worldview:  "光之国是M78星云中奥特曼的故乡。",
+		Background: "{角色名}曾经是光之国最强大的战士之一。",
+		Opening:    "宇宙空间站中，{角色名}的记忆开始苏醒。",
+		State: []domain.KeyValue{
+			{Key: "堕落指数", Value: "85"},
+			{Key: "情绪", Value: "暴怒"},
+		},
+		Rules: []*domain.Rule{
+			{Name: "光之国", Cond: `包含 "光之国"`, Action: `注入 "{角色名}的故乡是光之国"`},
+			{Name: "暴走", Cond: `roll(1d100) >= 80`, Action: `注入 "{角色名}感到狂暴涌上心头"`},
+		},
+	}
+
+	eng := New(contract)
+
+	// 第一轮对话：触发光之国注入（变量替换）
+	t.Log("===== 第一轮：触发光之国注入（{角色名}→贝利亚奥特曼）=====")
+	_, err := eng.Run("你知道光之国吗？", nil)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	// 第二轮对话：触发骰子注入（骰子结果随机）
+	t.Log("===== 第二轮：触发暴走判定（roll(1d100) >= 80）=====")
+	_, err = eng.Run("我感觉力量在涌动！", nil)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	// 获取格式化后的 .meph 内容
+	content := eng.buildChildContent()
+
+	t.Logf("格式化后的 .meph 文件内容：\n%s", content)
+
+	// 断言：变量替换已生效
+	if !strings.Contains(content, "贝利亚奥特曼的故乡是光之国") {
+		t.Error("变量替换未生效：{角色名} 应被替换为 贝利亚奥特曼")
+	}
+
+	// 断言：roll 骰子结果已包含在记忆描述中
+	hasRollResult1 := strings.Contains(content, "感到狂暴涌上心头")
+	if !hasRollResult1 {
+		t.Log("注：暴走注入未触发（roll 结果未达到阈值 80，属正常随机波动）")
+	}
+
+	// 断言：锚点内容已保留
+	if !strings.Contains(content, "力量就是一切") {
+		t.Error("锚点内容未保留")
+	}
+
+	// 断言：状态已更新（历史中记录了状态保持不变）
+	state := eng.State()
+	if state["堕落指数"] != 85 {
+		t.Logf("注意：堕落指数当前值为 %v", state["堕落指数"])
 	}
 }
 

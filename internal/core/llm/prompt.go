@@ -18,6 +18,7 @@ package llm
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"mephisto/internal/domain"
@@ -199,8 +200,13 @@ func renderStateList(state map[string]any) string {
 		return "  （无特殊状态）"
 	}
 	var sb strings.Builder
-	for k, v := range state {
-		fmt.Fprintf(&sb, "- %s: %v\n", k, v)
+	keys := make([]string, 0, len(state))
+	for k := range state {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		fmt.Fprintf(&sb, "- %s: %v\n", k, state[k])
 	}
 	return sb.String()
 }

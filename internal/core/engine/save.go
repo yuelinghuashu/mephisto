@@ -129,7 +129,7 @@ func LoadChild(filename, branch string) (*ChildData, error) {
 //
 // 变量替换策略：
 //   - 替换：锚点、世界观、角色背景、开局场景、规则动作
-//   - 不替换：状态（变量源）、校验（静态配置）、记忆（已生成）、历史（已记录）
+//   - 不替换：状态（变量源）、记忆（已生成）、历史（已记录）
 func (e *Engine) buildChildContent() string {
 	var sb strings.Builder
 
@@ -207,16 +207,7 @@ func (e *Engine) buildChildContent() string {
 		fmt.Fprint(&sb, "\n")
 	}
 
-	// ---- 8. 校验（不替换，保持静态配置） ----
-	if len(contract.Validation) > 0 {
-		fmt.Fprint(&sb, "【校验】\n")
-		for _, kv := range contract.Validation {
-			fmt.Fprintf(&sb, "- %s: %s\n", kv.Key, kv.Value)
-		}
-		fmt.Fprint(&sb, "\n")
-	}
-
-	// ---- 9. 记忆（不替换，直接存储） ----
+	// ---- 8. 记忆（不替换，直接存储） ----
 	if len(memories) > 0 {
 		fmt.Fprint(&sb, "【记忆】\n")
 		for _, mem := range memories {
@@ -225,7 +216,7 @@ func (e *Engine) buildChildContent() string {
 		fmt.Fprint(&sb, "\n")
 	}
 
-	// ---- 10. 历史（不替换，直接存储，换行转义） ----
+	// ---- 9. 历史（不替换，直接存储，换行转义） ----
 	if len(history) > 0 {
 		fmt.Fprint(&sb, "【历史】\n")
 		for _, entry := range history {

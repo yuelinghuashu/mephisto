@@ -22,6 +22,8 @@ package engine
 
 import (
 	"maps"
+	"slices"
+
 	"mephisto/internal/domain"
 	"mephisto/internal/shared"
 	"sync"
@@ -63,7 +65,7 @@ func NewRuntime(contract *domain.Contract, maxHistory int) *Runtime {
 		contract:   contract,
 		state:      make(map[string]any),
 		history:    []domain.HistoryEntry{},
-		memories:   append([]string{}, contract.Memories...),
+		memories:   slices.Clone(contract.Memories),
 		maxHistory: maxHistory,
 	}
 

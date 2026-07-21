@@ -173,17 +173,21 @@ func (e *Engine) Run(input string, onChunk func(string)) (string, error) {
 
 	// 2. 规则匹配
 	state := runtime.State()
-	rule, matched := matchRule(e.contract.Rules, input, state)
+	rule, matched, rollInfo := matchRule(e.contract.Rules, input, state, e.debug)
 
 	var response string
 
 	if matched {
 		// 3a. 执行动作
-		response = ExecuteAction(rule.Action, input, runtime, e.llmClient, onChunk)
+		response = ExecuteAction(rule.Action, input, runtime, e.llmClient, onChunk, rollInfo)
 
 		// 注入动作无输出，继续 LLM
 		if response == "" {
-			response = e.callLLM(input, "继续推进剧情", onChunk)
+			instruction := "继续推进剧情"
+			if rollInfo != "" {
+				instruction = fmt.Sprintf("继续推进剧情（%s）", rollInfo)
+			}
+			response = e.callLLM(input, instruction, onChunk)
 		}
 	} else {
 		// 3b. 无规则匹配，自由叙事

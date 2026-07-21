@@ -5,7 +5,7 @@ package domain
 // 它包含所有用户书写的区块 + 系统运行时生成的区块
 type Contract struct {
 	// ============================================================
-	// 8 个用户区块（由创作者书写）
+	// 7 个用户区块（由创作者书写）
 	// ============================================================
 
 	// 【角色名】单行文本，必选
@@ -32,10 +32,6 @@ type Contract struct {
 	// 【规则】规则列表，可选
 	Rules []*Rule `json:"rules,omitempty"`
 
-	// 【校验】键值对列表，可选
-	// 后置检查配置
-	Validation []KeyValue `json:"validation,omitempty"`
-
 	// ============================================================
 	// 2 个系统区块（由程序自动生成，不出现在用户书写的 .meph 中）
 	// ============================================================
@@ -49,7 +45,7 @@ type Contract struct {
 	History []HistoryEntry `json:"history,omitempty"`
 }
 
-// KeyValue 表示一个键值对（用于锚点、校验等区块）
+// KeyValue 表示一个键值对（用于锚点、状态等区块）
 type KeyValue struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`

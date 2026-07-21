@@ -141,7 +141,7 @@ func parseTextBlock(lines []Line) string {
 	return sb.String()
 }
 
-// parseKeyValueList 解析键值对列表（锚点、校验）。
+// parseKeyValueList 解析键值对列表（锚点、状态）。
 // 直接复用 parseKeyValuePairs。
 func parseKeyValueList(lines []Line, blockName string) ([]domain.KeyValue, error) {
 	return parseKeyValuePairs(lines, blockName)
@@ -374,12 +374,6 @@ func parseBlocks(blocks []Block) (*domain.Contract, error) {
 				return nil, err
 			}
 			contract.Rules = value
-		case "校验":
-			value, err := parseKeyValueList(block.Content, block.Title)
-			if err != nil {
-				return nil, err
-			}
-			contract.Validation = value
 		case "记忆":
 			value, err := parsePlainList(block.Content, block.Title)
 			if err != nil {

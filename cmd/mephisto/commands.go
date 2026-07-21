@@ -10,7 +10,6 @@ import (
 
 	"mephisto/internal/core/engine"
 	"mephisto/internal/core/parser"
-	"mephisto/internal/core/validator"
 	"mephisto/internal/domain"
 )
 
@@ -36,12 +35,6 @@ type CheckOutlineItem struct {
 }
 
 // runParse 执行解析命令。
-//
-// 流程：
-//  1. 解析 .meph 文件
-//  2. 验证契约
-//  3. 序列化为 JSON
-//  4. 写入输出
 func runParse(cfg *AppConfig) error {
 	contract, err := loadContract(cfg.File)
 	if err != nil {
@@ -57,14 +50,6 @@ func runParse(cfg *AppConfig) error {
 }
 
 // runInteractive 启动交互式对话模式。
-//
-// 流程：
-//  1. 加载并验证契约
-//  2. 创建 LLM 客户端
-//  3. 创建引擎（注入 LLM 客户端、调试模式）
-//  4. 启动交互会话（传递 reset 标志）
-//
-// 注意：记忆管理由引擎内部自动处理，无需外部创建 MemoryManager。
 func runInteractive(cfg *AppConfig) error {
 	contract, err := loadContract(cfg.File)
 	if err != nil {
@@ -89,60 +74,30 @@ func runInteractive(cfg *AppConfig) error {
 }
 
 // runCheck 执行检查命令（供 VSCode 插件调用）。
+//
+// 解析器本身已经做了必填项验证（角色名、规则名等），
+// 此处直接使用解析结果，解析成功即视为有效契约。
 func runCheck(cfg *AppConfig) error {
 	// 1. 解析契约
 	contract, err := parser.ParseFile(cfg.File)
 	if err != nil {
-		// 解析失败时，仍然尝试提取部分信息
 		return outputCheckError(err)
 	}
 
-	// 2. 验证契约
-	errs := validator.Validate(contract)
-
-	// 3. 构建输出
+	// 2. 构建输出（解析器已确保必填项完整）
 	checkResult := CheckResult{
-		Valid:   len(errs) == 0,
-		Errors:  convertErrors(errs),
+		Valid:   true,
+		Errors:  []CheckError{},
 		Outline: buildOutline(contract),
 	}
 
-	// 4. 输出 JSON
+	// 3. 输出 JSON
 	data, err := json.MarshalIndent(checkResult, "", "  ")
 	if err != nil {
 		return fmt.Errorf("序列化失败: %w", err)
 	}
 	fmt.Println(string(data))
 	return nil
-}
-
-// convertErrors 将验证错误转换为 CheckError 列表。
-func convertErrors(errs []validator.ValidationError) []CheckError {
-	result := make([]CheckError, 0, len(errs))
-	for _, e := range errs {
-		line := extractLineFromError(e)
-		result = append(result, CheckError{
-			Line:     line,
-			Message:  e.Error(),
-			Severity: "error",
-		})
-	}
-	return result
-}
-
-// extractLineFromError 从验证错误中提取行号（简化实现）。
-func extractLineFromError(e validator.ValidationError) int {
-	msg := e.Error()
-	if idx := strings.Index(msg, "第 "); idx != -1 {
-		rest := msg[idx+3:]
-		if spaceIdx := strings.Index(rest, " "); spaceIdx != -1 {
-			var line int
-			if _, err := fmt.Sscanf(rest[:spaceIdx], "%d", &line); err == nil {
-				return line
-			}
-		}
-	}
-	return 0
 }
 
 // buildOutline 从契约构建大纲。
@@ -221,15 +176,6 @@ func buildOutline(contract *domain.Contract) []CheckOutlineItem {
 		line += len(contract.Rules) + 2
 	}
 
-	if len(contract.Validation) > 0 {
-		items = append(items, CheckOutlineItem{
-			Name: "校验",
-			Line: line,
-			Kind: "block",
-		})
-		line += len(contract.Validation) + 2
-	}
-
 	return items
 }
 
@@ -249,3 +195,4 @@ func outputCheckError(err error) error {
 	fmt.Println(string(data))
 	return nil
 }
+

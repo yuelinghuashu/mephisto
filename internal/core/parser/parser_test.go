@@ -40,11 +40,16 @@ func loadGolden(path string, target *domain.Contract) error {
 
 // saveGolden 将解析结果保存为 JSON（用于首次生成或更新）。
 func saveGolden(path string, contract *domain.Contract) error {
-	data, err := json.MarshalIndent(contract, "", "  ")
+	f, err := os.Create(path)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	defer f.Close()
+
+	encoder := json.NewEncoder(f)
+	encoder.SetIndent("", "  ")
+	encoder.SetEscapeHTML(false) // 防止 & < > 被转义为 \u0026 \u003c \u003e
+	return encoder.Encode(contract)
 }
 
 // ============================================================

@@ -27,9 +27,7 @@ import (
 //
 // 为什么要在 lexer 阶段就记录行号？
 //
-//	在重构前，行号由 parser 自行计算（baseLine + 偏移量），
-//	导致 parser 需要维护复杂的迭代器状态。
-//	现在由 lexer 在扫描时直接记录绝对行号，parser 拿到 Line 后
+// lexer 在扫描时直接记录绝对行号，parser 拿到 Line 后
 //	直接使用 Line.Number 报告错误，无需任何计算。
 //
 // 字段说明：
@@ -73,7 +71,7 @@ type Block struct {
 //
 // 基础白名单包含 10 个标准区块：
 //
-//	角色名、锚点、世界观、角色背景、开局场景、状态、规则、校验、记忆、历史
+//	角色名、锚点、世界观、角色背景、开局场景、状态、规则、记忆、历史
 //
 // 扩展方式：
 //
@@ -94,7 +92,6 @@ func getKnownBlocks() map[string]bool {
 		"开局场景": true,
 		"状态":   true,
 		"规则":   true,
-		"校验":   true,
 		"记忆":   true,
 		"历史":   true,
 	}
