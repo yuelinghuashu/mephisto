@@ -1,3 +1,5 @@
 data/*.txt
+data/*_child.meph
+my-style.txt
 .env
 releases/

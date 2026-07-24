@@ -59,6 +59,7 @@ run 选项:
                                         （默认从 OPENAI_API_KEY 环境变量读取）
   -base-url <URL>                     API 基础 URL
                                         （默认从 OPENAI_BASE_URL 环境变量读取）
+  -constraints <文件>                 自定义输出约束文件（默认使用内置约束）
   -max-tokens <N>                     最大生成 Token 数（默认 4096）
 
 交互模式 (run) 内置命令:

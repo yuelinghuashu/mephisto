@@ -53,11 +53,12 @@ import (
 //   - debug     : 是否启用调试模式
 //   - memoryCfg : 记忆管理配置
 type Engine struct {
-	runtime   *Runtime
-	contract  *domain.Contract
-	llmClient llm.Client
-	debug     bool
-	memoryCfg MemoryConfig
+	runtime     *Runtime
+	contract    *domain.Contract
+	llmClient   llm.Client
+	debug       bool
+	memoryCfg   MemoryConfig
+	constraints string // 自定义输出约束（空=使用默认）
 }
 
 // Option 配置选项。
@@ -79,6 +80,12 @@ func WithDebug(debug bool) Option {
 // 如果不设置，使用 DefaultMemoryConfig。
 func WithMemoryConfig(cfg MemoryConfig) Option {
 	return func(e *Engine) { e.memoryCfg = cfg }
+}
+
+// WithConstraints 设置自定义输出约束。
+// 如果不设置，使用 NarrativeConstraints 默认值。
+func WithConstraints(constraints string) Option {
+	return func(e *Engine) { e.constraints = constraints }
 }
 
 // WithMaxHistory 设置最大保留对话轮数。
@@ -113,10 +120,11 @@ func WithMaxHistory(n int) Option {
 //	)
 func New(contract *domain.Contract, opts ...Option) *Engine {
 	e := &Engine{
-		contract:  contract,
-		runtime:   NewRuntime(contract, 20),
-		debug:     false,
-		memoryCfg: DefaultMemoryConfig,
+		contract:    contract,
+		runtime:     NewRuntime(contract, 20),
+		debug:       false,
+		memoryCfg:   DefaultMemoryConfig,
+		constraints: "",
 	}
 
 	for _, opt := range opts {
@@ -267,7 +275,7 @@ func (e *Engine) callLLM(input, instruction string, onChunk func(string)) string
 		e.runtime.History(),
 		e.runtime.Memories(),
 		combinedInput,
-		llm.NarrativeConstraints,
+		e.constraints,
 	)
 
 	ctx := context.Background()

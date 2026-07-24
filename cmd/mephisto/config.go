@@ -31,6 +31,9 @@ type AppConfig struct {
 	Quiet  bool   // 静默模式
 	Output string // 输出文件路径（parse 命令）
 
+	// ---- 约束配置 ----
+	ConstraintsFile string // 自定义约束文件路径（空=使用默认）
+
 	// ---- LLM 配置 ----
 	Client    string // deepseek / openai / ollama
 	Model     string // 模型名称
@@ -123,6 +126,9 @@ func parseRunArgs(args []string) *AppConfig {
 	fs.BoolVar(&cfg.Reset, "reset", getEnvBool("MEPHISTO_RESET"), "忽略子版存档，从母版重新开始")
 	fs.BoolVar(&cfg.Debug, "debug", getEnvBool("MEPHISTO_DEBUG"), "启用规则调试")
 	fs.BoolVar(&cfg.Quiet, "q", getEnvBool("MEPHISTO_QUIET"), "静默模式")
+
+	// 约束配置
+	fs.StringVar(&cfg.ConstraintsFile, "constraints", "", "自定义约束文件（默认使用内置约束）")
 
 	// LLM 配置
 	fs.StringVar(&cfg.Client, "client", getEnv("MEPHISTO_CLIENT", "deepseek"), "LLM 客户端: deepseek/openai/ollama")

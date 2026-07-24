@@ -5,6 +5,20 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [v1.1.0] — 2026-07-25
+
+### 🚀 新特性
+
+- **自定义输出约束**：新增 `--constraints` 命令行参数，支持通过外部纯文本文件定义 LLM 输出格式要求（如诗歌风格、字数限制等），`.meph` 契约文件保持纯净
+- **`llm.LoadConstraints()` 函数**：新增从文件读取自定义约束的公共 API，路径为空时自动使用默认 `NarrativeConstraints`
+
+### 🔧 重构
+
+- **`Engine` 新增 `WithConstraints()` Option**：约束字符串通过 Option 模式注入引擎，`callLLM()` 调用 `BuildPrompt` 时传入自定义约束而非硬编码默认值
+- **`NarrativeConstraints` 改为 `var`**：从 `const` 改为 `var` 以便与 `LoadConstraints` 组合使用
+
+---
+
 ## [v1.0.2] — 2026-07-24
 
 ### 🚀 新特性

@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"mephisto/internal/core/engine"
+	"mephisto/internal/core/llm"
 	"mephisto/internal/core/parser"
 )
 
@@ -37,12 +38,19 @@ func runInteractive(cfg *AppConfig) error {
 		return err
 	}
 
+	// ---- 加载自定义约束（如果有） ----
+	constraints, err := llm.LoadConstraints(cfg.ConstraintsFile)
+	if err != nil {
+		return err
+	}
+
 	// ---- 创建引擎（记忆管理由引擎内部自动处理） ----
 	eng := engine.New(
 		contract,
 		engine.WithLLM(llmClient),
 		engine.WithDebug(cfg.Debug),
 		engine.WithMemoryConfig(engine.DefaultMemoryConfig),
+		engine.WithConstraints(constraints),
 	)
 
 	session := NewSession(eng, cfg.File, cfg.Branch, cfg.Reset)
