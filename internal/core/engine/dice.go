@@ -300,6 +300,7 @@ func (re rollExpr) thresholdDesc() string {
 func extractRollInfo(ruleName, cond string, rs *RollStore) string {
 	remaining := cond
 	var parts []string
+	nextRuleName := ruleName
 
 	for {
 		idx := strings.Index(remaining, "roll(")
@@ -339,18 +340,26 @@ func extractRollInfo(ruleName, cond string, rs *RollStore) string {
 			desc = fmt.Sprintf("%s（%s）", desc, td)
 		}
 		// 每个结果带上规则名和成功/失败图标
-		parts = append(parts, fmt.Sprintf("[%s] %s %s", ruleName, desc, statusIcon))
-		remaining = remaining[len(re.RollCore):] // 移除 roll core
+		parts = append(parts, fmt.Sprintf("[%s] %s %s", nextRuleName, desc, statusIcon))
+
+		// 检查 roll 之后是否紧跟着操作符和刻度，或者是另一个 roll（复合条件）
+		// 移除已解析的部分
+		remaining = remaining[idx+len(re.RollCore):]
 
 		// 跳过阈值部分（如果有）
 		if re.Op != "" {
-			// 跳过操作符和数值，如 " >= 80"
 			skipLen := len(re.Op) + len(fmt.Sprintf("%d", re.UserThreshold))
 			if len(remaining) > skipLen {
 				remaining = strings.TrimSpace(remaining[skipLen:])
 			} else {
 				remaining = ""
 			}
+		}
+
+		// 如果 remaining 非空且还有文本，检查是否以 "&&" 开头——说明是同一个条件的后续
+		remaining = strings.TrimSpace(remaining)
+		if remaining != "" && strings.HasPrefix(remaining, "&&") {
+			remaining = strings.TrimSpace(remaining[2:])
 		}
 	}
 
