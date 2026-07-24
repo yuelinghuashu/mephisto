@@ -30,11 +30,11 @@ package engine
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 
 	"mephisto/internal/core/llm"
 	"mephisto/internal/domain"
+	"mephisto/internal/shared"
 )
 
 // ============================================================
@@ -163,7 +163,10 @@ func New(contract *domain.Contract, opts ...Option) *Engine {
 func (e *Engine) Run(input string, onChunk func(string)) (string, error) {
 	input = strings.TrimSpace(input)
 	if input == "" {
-		return "", fmt.Errorf("输入不能为空")
+		return "", &shared.EngineError{
+			Code:    "EMPTY_INPUT",
+			Message: "输入不能为空",
+		}
 	}
 
 	runtime := e.runtime // 局部变量，减少重复访问
@@ -171,14 +174,35 @@ func (e *Engine) Run(input string, onChunk func(string)) (string, error) {
 	// 1. 记录命运指引
 	runtime.AddHistory("fate", input)
 
-	// 2. 规则匹配
+	// 2. 两阶段规则匹配
+	// 阶段一：批量执行所有被动规则（状态修改 + 注入记忆）
+	// 被动规则产生副作用但不直接输出，所有匹配的都执行
+	passiveMatched, passiveRollInfo := matchPassiveRules(e.contract.Rules, input, runtime, e.debug)
+
+	// 阶段二：互斥匹配主动规则（LLM 指令/静态文本）
+	// 主动规则产生直接输出，只执行第一个匹配的
 	state := runtime.State()
-	rule, matched, rollInfo := matchRule(e.contract.Rules, input, state, e.debug)
+	rule, activeMatched, activeRollInfo := matchActiveRule(e.contract.Rules, input, state, e.debug)
+
+	// 合并 roll 信息（每行一个）
+	var rollInfo string
+	if passiveRollInfo != "" && activeRollInfo != "" {
+		rollInfo = passiveRollInfo + "\n" + activeRollInfo
+	} else if passiveRollInfo != "" {
+		rollInfo = passiveRollInfo
+	} else if activeRollInfo != "" {
+		rollInfo = activeRollInfo
+	}
+
+	// 3. 输出骰子结果给用户（如果有）
+	if rollInfo != "" && onChunk != nil {
+		onChunk("\n" + rollInfo + "\n\n")
+	}
 
 	var response string
 
-	if matched {
-		// 3a. 执行动作
+	if activeMatched {
+		// 3a. 执行主动规则动作
 		response = ExecuteAction(rule.Action, input, runtime, e.llmClient, onChunk, rollInfo)
 
 		// 注入动作无输出，继续 LLM
@@ -189,9 +213,17 @@ func (e *Engine) Run(input string, onChunk func(string)) (string, error) {
 			}
 			response = e.callLLM(input, instruction, onChunk)
 		}
-	} else {
-		// 3b. 无规则匹配，自由叙事
+	} else if !passiveMatched {
+		// 3b. 没有匹配任何规则（被动 + 主动都没有），自由叙事
 		response = e.callLLM(input, "自由回应命运的指引", onChunk)
+	} else {
+		// 3c. 仅被动规则匹配，无主动规则匹配
+		// 被动规则只产生副作用不输出，需要 LLM 继续叙事
+		instruction := "继续推进剧情"
+		if rollInfo != "" {
+			instruction = fmt.Sprintf("继续推进剧情（%s）", rollInfo)
+		}
+		response = e.callLLM(input, instruction, onChunk)
 	}
 
 	// 4. 记录角色响应
@@ -258,17 +290,7 @@ func (e *Engine) callLLM(input, instruction string, onChunk func(string)) string
 
 // defaultResponse 默认静态响应（无 LLM 或无规则匹配时使用）。
 func (e *Engine) defaultResponse(onChunk func(string)) string {
-	roleName := e.contract.RoleName
-	if roleName == "" {
-		roleName = "角色"
-	}
-	msg := fmt.Sprintf("%s 沉默地注视着命运。", roleName)
-	if onChunk != nil {
-		for _, ch := range msg {
-			onChunk(string(ch))
-		}
-	}
-	return msg
+	return defaultStaticResponse(e.contract.RoleName, onChunk)
 }
 
 // processMemories 处理记忆提取和压缩。
@@ -291,13 +313,10 @@ func (e *Engine) processMemories() {
 		return
 	}
 
-	// 去重追加
+	// 去重追加（使用语义去重）
 	memories := runtime.Memories()
-	for _, mem := range newMemories {
-		if !slices.Contains(memories, mem) {
-			memories = append(memories, mem)
-		}
-	}
+	memories = append(memories, newMemories...)
+	memories = shared.DeduplicateMemories(memories)
 	runtime.ReplaceMemories(memories)
 
 	// 压缩（如果超过上限）

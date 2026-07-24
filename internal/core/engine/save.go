@@ -139,12 +139,7 @@ func (e *Engine) buildChildContent() string {
 	history := e.runtime.History()
 
 	// 构建变量映射（用于占位符替换）
-	vars := map[string]string{
-		"角色名": contract.RoleName,
-	}
-	for k, v := range state {
-		vars[k] = fmt.Sprintf("%v", v)
-	}
+	vars := shared.BuildPlaceholderVars(contract.RoleName, state)
 
 	// ---- 1. 角色名（不替换） ----
 	fmt.Fprintf(&sb, "【角色名】\n%s\n\n", contract.RoleName)
@@ -179,10 +174,23 @@ func (e *Engine) buildChildContent() string {
 
 	// ---- 6. 状态（不替换占位符，保持字面量） ----
 	if len(state) > 0 {
-		// 按契约中的顺序输出
+		// 按契约中的顺序输出，运行时新增的键追加在末尾
 		orderKeys := make([]string, 0, len(contract.State))
 		for _, kv := range contract.State {
 			orderKeys = append(orderKeys, kv.Key)
+		}
+		// 将运行时新增的键（不在 contract.State 中的）追加到 orderKeys
+		for k := range state {
+			found := false
+			for _, ordered := range orderKeys {
+				if k == ordered {
+					found = true
+					break
+				}
+			}
+			if !found {
+				orderKeys = append(orderKeys, k)
+			}
 		}
 		stateKVs := shared.MapToKeyValues(state, orderKeys)
 

@@ -5,7 +5,41 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [v1.0.1] — 2026-07-21
+## [v1.0.2] — 2026-07-24
+
+### 🚀 新特性
+
+- **骰子结果对用户可见**：规则匹配中的 `roll(...)` 判定结果现在会通过 `onChunk` 回调输出给用户，格式为 `[规则名] roll(1d100) = 87/100（阈值 ≥80）✅`，成功/失败分别显示 ✅/❌ 图标
+- **骰子结果包含规则名**：`extractRollInfo` 新增 `ruleName` 参数，每行一个骰子结果，格式 `[规则名] roll(1d100) = 87/100 ✅`
+- **失败时也显示骰子结果**：无论条件匹配成功与否，只要规则条件包含 `roll(...)` 就提取骰子结果展示给用户
+- **语义记忆去重**：`shared.DeduplicateMemories` 基于关键词 Jaccard 相似度去重，语义相近但表述不同的记忆可自动合并
+
+### 🔧 重构
+
+- **拆解 `rules.go`（1111 行）为 4 个文件**：职责清晰，每文件 170~250 行：
+  - `dice.go` — 骰子系统（`RollStore`、`evalRoll`、`extractRollInfo`）
+  - `condition.go` — 条件评估（`evalCondition`、状态比较、值比较）
+  - `matcher.go` — 规则匹配（两阶段匹配、互斥组、调试输出）
+  - `executor.go` — 动作执行（注入、状态修改、LLM 调用）
+- **`engine.go` 清理**：`defaultResponse` 委托给 `defaultStaticResponse`，删除未使用的 `slices` 导入
+
+### 🐛 修复
+
+- **骰子结果不一致**：引入 `RollStore` 确保 `evalCondition`（条件判定）和 `extractRollInfo`（叙事信息）使用同一骰值，消除「判定通过但 LLM 看到不同点数」的语义矛盾
+- **运行时新增的状态键未保存**：`buildChildContent` 在输出状态时，会将运行时通过规则动态新增的键追加到契约原始顺序之后，不再丢失数据
+- **`parseFlexible` flag 解析边界缺陷**：改用 `fs.Lookup()` 校验已注册 flag，正确定区分布尔/非布尔 flag 的值消费，避免负数字面量被误消费
+
+### ♻️ 清理
+
+- **变量映射构建提取公共函数**：`shared.BuildPlaceholderVars()` 统一了 `session.go` 和 `save.go` 中的占位符映射构建逻辑
+- **废弃 `check` 子命令**：VSCode 插件已有独立 TypeScript 解析器，CLI 的 `check` 命令完全冗余。删除了 `CheckResult`、`CheckError`、`CheckOutlineItem` 类型及相关函数（`runCheck`、`buildOutline`、`outputCheckError`）
+- **删除 `ParseErrorLine` 函数**：未被任何代码调用
+- **内联 `loadContract`**：简单包装 `parser.ParseFile` 的直接调用
+
+---
+
+<details>
+<summary><strong>v1.0.1</strong> — 2026-07-21</summary>
 
 ### 🐛 修复
 
@@ -38,9 +72,14 @@
 
 - **README.md 更新**：Go 版本要求、CLI 选项、项目结构同步最新
 - **docs/RULES.md 更新**：删除不存在的 `LLM:` 动作类型，互斥组改为「规则修饰符」，骰子补充自定义阈值
-- **docs/SYNTAX.md 更新**：标准区块从 9 个改为 8 个（删除【校验】），删除不支持的 `LLM:` 示例
+- **docs/SYNTAX.md 更新**：标准区块从 10 个改为 9 个（删除【校验】），删除不支持的 `LLM:` 示例
 
-## [v1.0.0] — 2026-07-21
+</details>
+
+---
+
+<details>
+<summary><strong>v1.0.0</strong> — 2026-07-21</summary>
 
 ### 🎯 正式稳定版发布
 
@@ -100,7 +139,12 @@
 - **修复 `buildOutline` 行号计算**：规则子项的行号准确指向 `rule.Line`
 - **修复 `integration_test.go` 中缺失的记忆验证**：`TestIntegrationStatePersistence` 现在正确检查记忆内容
 
-## [v0.5.0] — 2026-07-19
+</details>
+
+---
+
+<details>
+<summary><strong>v0.5.0</strong> — 2026-07-19</summary>
 
 ### 🏗️ 架构重构
 
@@ -243,9 +287,12 @@
 | 单元测试覆盖率   | ~40%          | ~70%                                                         |
 | 新增功能开发耗时 | 平均 2-4 小时 | 平均 30-60 分钟                                              |
 
+</details>
+
 ---
 
-## [v0.4.0] — 2026-07-17
+<details>
+<summary><strong>v0.4.0</strong> — 2026-07-17</summary>
 
 ### ✨ 新增
 
@@ -298,9 +345,12 @@
   - `parser/types.go` 新增 `KeyHistory` 常量
   - `parser/types.go` 的 `StateExcludeKeys` 新增 `KeyMemory` 排除
 
+</details>
+
 ---
 
-## [v0.3.0] — 2026-07-16
+<details>
+<summary><strong>v0.3.0</strong> — 2026-07-16</summary>
 
 ### ✨ 新增
 
@@ -367,9 +417,12 @@
 - 修复 `resolveFilename` 逻辑冗余
 - 修复 `printContextValue` 中空行显示问题
 
+</details>
+
 ---
 
-## [v0.2.1] — 2026-07-16
+<details>
+<summary><strong>v0.2.1</strong> — 2026-07-16</summary>
 
 ### 🧹 优化
 
@@ -391,9 +444,12 @@
 - 注入动作使用 `strings.CutPrefix` 和 `strings.Trim`
 - 表达式解析器用标准库 `strings.Count` 替代自定义 `isBalanced`
 
+</details>
+
 ---
 
-## [v0.2.0] — 2026-07-15
+<details>
+<summary><strong>v0.2.0</strong> — 2026-07-15</summary>
 
 ### ✨ 新增
 
@@ -443,9 +499,12 @@
 - 修复 `eval.go` 与 `expr.go` 函数重复声明问题
 - 修复 `开局场景` 区块变量替换顺序问题（分阶段构建上下文）
 
+</details>
+
 ---
 
-## [v0.1.0] — 2026-07-15
+<details>
+<summary><strong>v0.1.0</strong> — 2026-07-15</summary>
 
 ### 🎉 首次发布
 
@@ -490,3 +549,5 @@
 - `README.md` — 项目说明与快速开始
 - `LICENSE` — MIT 许可证
 - `CHANGELOG.md` — 更新日志
+
+</details>

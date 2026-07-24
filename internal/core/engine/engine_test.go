@@ -23,10 +23,10 @@ import (
 
 func TestEvalCondition(t *testing.T) {
 	state := map[string]any{
-		"堕落指数": 85,
-		"生命值":  30,
-		"等级":   5,
-		"情绪":   "愤怒",
+		"灵魂完整度": 85,
+		"生命值":   30,
+		"等级":    5,
+		"情绪":    "愤怒",
 	}
 
 	tests := []struct {
@@ -38,11 +38,11 @@ func TestEvalCondition(t *testing.T) {
 		// ---- 包含/不包含 ----
 		{"包含匹配", `包含 "攻击"`, "我要发起攻击！", true},
 		{"包含不匹配", `包含 "防御"`, "我要发起攻击！", false},
-		{"不包含匹配", `不包含 "光之国"`, "我是贝利亚", true},
-		{"不包含不匹配", `不包含 "光之国"`, "光之国是故乡", false},
+		{"不包含匹配", `不包含 "契约"`, "我是浮士德", true},
+		{"不包含不匹配", `不包含 "契约"`, "契约已经签下", false},
 
 		// ---- 状态比较 ----
-		{"状态 >", `状态.堕落指数 > 80`, "", true},
+		{"状态 >", `状态.灵魂完整度 > 80`, "", true},
 		{"状态 <", `状态.生命值 < 50`, "", true},
 		{"状态 == 数字", `状态.等级 == 5`, "", true},
 		{"状态 == 字符串", `状态.情绪 == "愤怒"`, "", true},
@@ -50,15 +50,15 @@ func TestEvalCondition(t *testing.T) {
 		{"状态不存在", `状态.不存在 > 10`, "", false},
 
 		// ---- 逻辑组合 ----
-		{"与运算 全部满足", `包含 "攻击" && 状态.堕落指数 > 80`, "我要发起攻击！", true},
-		{"与运算 部分不满足", `包含 "攻击" && 状态.堕落指数 < 80`, "我要发起攻击！", false},
-		{"或运算 任意满足", `包含 "防御" || 状态.堕落指数 > 80`, "我要发起攻击！", true},
+		{"与运算 全部满足", `包含 "攻击" && 状态.灵魂完整度 > 80`, "我要发起攻击！", true},
+		{"与运算 部分不满足", `包含 "攻击" && 状态.灵魂完整度 < 80`, "我要发起攻击！", false},
+		{"或运算 任意满足", `包含 "防御" || 状态.灵魂完整度 > 80`, "我要发起攻击！", true},
 		{"或运算 全部不满足", `包含 "防御" || 状态.生命值 > 100`, "我要发起攻击！", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := evalCondition(tt.cond, tt.input, state)
+			result := evalCondition(tt.cond, tt.input, state, nil)
 			if result != tt.expected {
 				t.Errorf("evalCondition(%q) = %v, expected %v", tt.cond, result, tt.expected)
 			}
@@ -95,7 +95,7 @@ func TestEvalRoll(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// 多次运行，验证骰值始终在范围内
 			for i := 0; i < 100; i++ {
-				_, val := evalRoll(tt.cond)
+				_, val := evalRoll(tt.cond, nil)
 				if val < tt.wantMin || val > tt.wantMax {
 					t.Errorf("evalRoll(%q) = %d, want in range [%d, %d]", tt.cond, val, tt.wantMin, tt.wantMax)
 					break
@@ -111,7 +111,7 @@ func TestEvalRollWithCustomThreshold(t *testing.T) {
 		hasFalse := false
 		hasTrue := false
 		for i := 0; i < 200; i++ {
-			matched, _ := evalRoll("roll(1d100) >= 80")
+			matched, _ := evalRoll("roll(1d100) >= 80", nil)
 			if matched {
 				hasTrue = true
 			} else {
@@ -129,7 +129,7 @@ func TestEvalRollWithCustomThreshold(t *testing.T) {
 	// roll(1d100) >= 0 应该总是 true
 	t.Run("roll(1d100) >= 0 总是成功", func(t *testing.T) {
 		for i := 0; i < 50; i++ {
-			matched, _ := evalRoll("roll(1d100) >= 0")
+			matched, _ := evalRoll("roll(1d100) >= 0", nil)
 			if !matched {
 				t.Errorf("roll(1d100) >= 0 应该总是 true，但第 %d 次返回 false", i)
 				break
@@ -140,7 +140,7 @@ func TestEvalRollWithCustomThreshold(t *testing.T) {
 	// roll(1d100) > 100 应该总是 false
 	t.Run("roll(1d100) > 100 总是失败", func(t *testing.T) {
 		for i := 0; i < 50; i++ {
-			matched, _ := evalRoll("roll(1d100) > 100")
+			matched, _ := evalRoll("roll(1d100) > 100", nil)
 			if matched {
 				t.Errorf("roll(1d100) > 100 应该总是 false，但第 %d 次返回 true", i)
 				break
@@ -221,14 +221,14 @@ func TestExtractRollInfo(t *testing.T) {
 		wantPre  string // 前缀
 	}{
 		{"无骰子", "包含 攻击", ""},
-		{"只有骰子", "roll(1d100)", "🎲 骰子结果："},
-		{"骰子+阈值", "roll(1d100) >= 80", "🎲 骰子结果："},
-		{"复合条件", `包含 "愤怒" && roll(1d100) >= 80`, "🎲 骰子结果："},
+		{"只有骰子", "roll(1d100)", "["},
+		{"骰子+阈值", "roll(1d100) >= 80", "["},
+		{"复合条件", `包含 "愤怒" && roll(1d100) >= 80`, "["},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := extractRollInfo(tt.cond)
+			result := extractRollInfo("测试规则", tt.cond, nil)
 			if tt.wantPre == "" {
 				if result != "" {
 					t.Errorf("extractRollInfo(%q) = %q, want empty", tt.cond, result)
@@ -251,12 +251,12 @@ func TestExtractRollInfo(t *testing.T) {
 // ============================================================
 
 func TestMatchRule(t *testing.T) {
-	state := map[string]any{"堕落指数": 85}
+	state := map[string]any{"灵魂完整度": 85}
 
 	rules := []*domain.Rule{
 		{Name: "攻击", Cond: `包含 "攻击"`, Action: "攻击动作", Group: "combat"},
 		{Name: "防御", Cond: `包含 "防御"`, Action: "防御动作", Group: "combat"},
-		{Name: "光之国", Cond: `包含 "光之国"`, Action: "光之国动作", Group: ""},
+		{Name: "契约", Cond: `包含 "契约"`, Action: "契约动作", Group: ""},
 	}
 
 	tests := []struct {
@@ -267,7 +267,7 @@ func TestMatchRule(t *testing.T) {
 	}{
 		{"触发攻击", "我要攻击！", "攻击", true},
 		{"触发防御", "我要防御！", "防御", true},
-		{"触发光之国", "光之国是什么？", "光之国", true},
+		{"触发契约", "契约已经签下", "契约", true},
 		{"无匹配", "你好", "", false},
 	}
 
@@ -303,7 +303,14 @@ func TestMatchRule(t *testing.T) {
 // ============================================================
 
 func TestExecuteAction(t *testing.T) {
-	contract := &domain.Contract{RoleName: "贝利亚奥特曼"}
+	contract := &domain.Contract{
+		RoleName: "浮士德",
+		State: []domain.KeyValue{
+			{Key: "灵魂完整度", Value: "50"},
+			{Key: "生命值", Value: "70"},
+			{Key: "等级", Value: "10"},
+		},
+	}
 	runtime := NewRuntime(contract, 20)
 
 	tests := []struct {
@@ -315,17 +322,17 @@ func TestExecuteAction(t *testing.T) {
 	}{
 		{
 			name:         "注入动作",
-			action:       `注入 "光之国是故乡"`,
+			action:       `注入 "契约已经签下"`,
 			input:        "",
 			expected:     "",
-			wantMemories: []string{"光之国是故乡"},
+			wantMemories: []string{"契约已经签下"},
 		},
 		{
 			name:         "注入动作（占位符替换）",
-			action:       `注入 "{角色名}的故乡是光之国"`,
+			action:       `注入 "{角色名}与梅菲斯特签订了契约"`,
 			input:        "",
 			expected:     "",
-			wantMemories: []string{"贝利亚奥特曼的故乡是光之国"},
+			wantMemories: []string{"浮士德与梅菲斯特签订了契约"},
 		},
 		{
 			name:     "状态修改（数字）",
@@ -338,6 +345,30 @@ func TestExecuteAction(t *testing.T) {
 			action:   `状态.情绪 = "愤怒"`,
 			input:    "",
 			expected: `📊 情绪 = 愤怒`,
+		},
+		{
+			name:     "复合赋值 +=（int）",
+			action:   `状态.灵魂完整度 += 15`,
+			input:    "",
+			expected: `📊 灵魂完整度 += 15`,
+		},
+		{
+			name:     "复合赋值 -=（int）",
+			action:   `状态.生命值 -= 30`,
+			input:    "",
+			expected: `📊 生命值 -= 30`,
+		},
+		{
+			name:     "复合赋值 *=（int）",
+			action:   `状态.等级 *= 2`,
+			input:    "",
+			expected: `📊 等级 *= 2`,
+		},
+		{
+			name:     "复合赋值 /=（int）",
+			action:   `状态.等级 /= 2`,
+			input:    "",
+			expected: `📊 等级 /= 2`,
 		},
 		{
 			name:     "静态文本（无 LLM）",
@@ -397,20 +428,20 @@ func TestEngineRun(t *testing.T) {
 			wantContains: "防御动作",
 		},
 		{
-			name:         "匹配光之国规则（注入）",
-			input:        "你知道光之国吗？",
+			name:         "匹配契约规则（注入）",
+			input:        "契约已经签下",
 			wantContains: "",
-			wantMemories: []string{"贝利亚奥特曼的故乡是光之国"},
+			wantMemories: []string{"浮士德与梅菲斯特签订了契约"},
 		},
 		{
-			name:         "匹配高堕落规则（状态触发）",
+			name:         "匹配高灵魂完整度规则（状态触发）",
 			input:        "我感觉到力量在涌动",
 			wantContains: "",
-			wantMemories: []string{"堕落指数过高"},
+			wantMemories: []string{"灵魂完整度过高"},
 			extraRules: []*domain.Rule{
-				{Name: "高堕落", Cond: `状态.堕落指数 > 80`, Action: `注入 "堕落指数过高"`},
+				{Name: "高灵魂", Cond: `状态.灵魂完整度 > 80`, Action: `注入 "灵魂完整度过高"`},
 			},
-			extraState: map[string]any{"堕落指数": 95},
+			extraState: map[string]any{"灵魂完整度": 95},
 		},
 		{
 			name:         "无匹配规则，返回默认响应",
@@ -424,17 +455,17 @@ func TestEngineRun(t *testing.T) {
 			rules := []*domain.Rule{
 				{Name: "攻击", Cond: `包含 "攻击" || 包含 "战斗"`, Action: "攻击动作", Group: "combat"},
 				{Name: "防御", Cond: `包含 "防御" || 包含 "防守"`, Action: "防御动作", Group: "combat"},
-				{Name: "光之国", Cond: `包含 "光之国"`, Action: `注入 "{角色名}的故乡是光之国"`},
+				{Name: "契约", Cond: `包含 "契约"`, Action: `注入 "{角色名}与梅菲斯特签订了契约"`},
 			}
 			rules = append(rules, tt.extraRules...)
 
-			state := []domain.KeyValue{{Key: "堕落指数", Value: "50"}}
+			state := []domain.KeyValue{{Key: "灵魂完整度", Value: "50"}}
 			for k, v := range tt.extraState {
 				state = append(state, domain.KeyValue{Key: k, Value: fmt.Sprintf("%v", v)})
 			}
 
 			contract := &domain.Contract{
-				RoleName: "贝利亚奥特曼",
+				RoleName: "浮士德",
 				Rules:    rules,
 				State:    state,
 			}
@@ -533,35 +564,35 @@ func TestEngineStateAndMemories(t *testing.T) {
 
 func TestDumpFormattedMeph(t *testing.T) {
 	contract := &domain.Contract{
-		RoleName: "贝利亚奥特曼",
+		RoleName: "浮士德",
 		Anchor: []domain.KeyValue{
-			{Key: "核心信念", Value: `"力量就是一切"`},
-			{Key: "绝对禁忌", Value: "不会承认自己的软弱"},
+			{Key: "核心信念", Value: `"知识高于一切"`},
+			{Key: "绝对禁忌", Value: "不会承认自己后悔"},
 		},
-		Worldview:  "光之国是M78星云中奥特曼的故乡。",
-		Background: "{角色名}曾经是光之国最强大的战士之一。",
-		Opening:    "宇宙空间站中，{角色名}的记忆开始苏醒。",
+		Worldview:  "梅菲斯特是地狱的使者，擅长以契约诱捕人类灵魂。",
+		Background: "{角色名}在绝望中与梅菲斯特签订了契约。",
+		Opening:    "书斋中烛火摇曳，{角色名}望着窗外的月光。",
 		State: []domain.KeyValue{
-			{Key: "堕落指数", Value: "85"},
-			{Key: "情绪", Value: "暴怒"},
+			{Key: "灵魂完整度", Value: "85"},
+			{Key: "情绪", Value: "永不满足"},
 		},
 		Rules: []*domain.Rule{
-			{Name: "光之国", Cond: `包含 "光之国"`, Action: `注入 "{角色名}的故乡是光之国"`},
-			{Name: "暴走", Cond: `roll(1d100) >= 80`, Action: `注入 "{角色名}感到狂暴涌上心头"`},
+			{Name: "契约", Cond: `包含 "契约"`, Action: `注入 "{角色名}与梅菲斯特签订了契约"`},
+			{Name: "灵魂代价", Cond: `roll(1d100) >= 80`, Action: `注入 "{角色名}感到灵魂正在流逝"`},
 		},
 	}
 
 	eng := New(contract)
 
-	// 第一轮对话：触发光之国注入（变量替换）
-	t.Log("===== 第一轮：触发光之国注入（{角色名}→贝利亚奥特曼）=====")
-	_, err := eng.Run("你知道光之国吗？", nil)
+	// 第一轮对话：触发契约注入（变量替换）
+	t.Log("===== 第一轮：触发契约注入（{角色名}→浮士德）=====")
+	_, err := eng.Run("契约已经签下", nil)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 
 	// 第二轮对话：触发骰子注入（骰子结果随机）
-	t.Log("===== 第二轮：触发暴走判定（roll(1d100) >= 80）=====")
+	t.Log("===== 第二轮：触发灵魂代价判定（roll(1d100) >= 80）=====")
 	_, err = eng.Run("我感觉力量在涌动！", nil)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -573,31 +604,103 @@ func TestDumpFormattedMeph(t *testing.T) {
 	t.Logf("格式化后的 .meph 文件内容：\n%s", content)
 
 	// 断言：变量替换已生效
-	if !strings.Contains(content, "贝利亚奥特曼的故乡是光之国") {
-		t.Error("变量替换未生效：{角色名} 应被替换为 贝利亚奥特曼")
+	if !strings.Contains(content, "浮士德与梅菲斯特签订了契约") {
+		t.Error("变量替换未生效：{角色名} 应被替换为 浮士德")
 	}
 
 	// 断言：roll 骰子结果已包含在记忆描述中
-	hasRollResult1 := strings.Contains(content, "感到狂暴涌上心头")
+	hasRollResult1 := strings.Contains(content, "感到灵魂正在流逝")
 	if !hasRollResult1 {
-		t.Log("注：暴走注入未触发（roll 结果未达到阈值 80，属正常随机波动）")
+		t.Log("注：灵魂代价注入未触发（roll 结果未达到阈值 80，属正常随机波动）")
 	}
 
 	// 断言：锚点内容已保留
-	if !strings.Contains(content, "力量就是一切") {
+	if !strings.Contains(content, "知识高于一切") {
 		t.Error("锚点内容未保留")
 	}
 
 	// 断言：状态已更新（历史中记录了状态保持不变）
 	state := eng.State()
-	if state["堕落指数"] != 85 {
-		t.Logf("注意：堕落指数当前值为 %v", state["堕落指数"])
+	if state["灵魂完整度"] != 85 {
+		t.Logf("注意：灵魂完整度当前值为 %v", state["灵魂完整度"])
+	}
+}
+
+func TestEngineEmptyInput(t *testing.T) {
+	contract := &domain.Contract{
+		RoleName: "浮士德",
+		State:    []domain.KeyValue{},
+		Rules:    []*domain.Rule{},
+	}
+	eng := New(contract)
+
+	_, err := eng.Run("", nil)
+	if err == nil {
+		t.Error("空输入应返回错误")
+	}
+
+	_, err = eng.Run("  ", nil)
+	if err == nil {
+		t.Error("空白输入应返回错误")
+	}
+}
+
+func TestEngineContractWithNoRules(t *testing.T) {
+	// 空契约（无状态、无规则、无记忆）也能正常工作
+	contract := &domain.Contract{
+		RoleName: "测试角色",
+		State:    []domain.KeyValue{},
+		Rules:    []*domain.Rule{},
+	}
+	eng := New(contract)
+	response, err := eng.Run("你好", nil)
+	if err != nil {
+		t.Fatalf("空契约运行失败: %v", err)
+	}
+	expected := "测试角色 沉默地注视着命运。"
+	if response != expected {
+		t.Errorf("空契约响应 = %v, want %v", response, expected)
+	}
+
+	// 验证历史记录
+	history := eng.History()
+	if len(history) != 2 {
+		t.Errorf("历史记录条数 = %d, want 2", len(history))
+	}
+	if history[0].Role != "fate" || history[0].Content != "你好" {
+		t.Error("第一条历史应为 fate 发言")
+	}
+	if history[1].Role != "assistant" {
+		t.Error("第二条历史应为 assistant 发言")
+	}
+}
+
+func TestEngineConcurrentAccess(t *testing.T) {
+	contract := &domain.Contract{
+		RoleName: "测试角色",
+		State:    []domain.KeyValue{},
+		Rules:    []*domain.Rule{},
+	}
+	eng := New(contract)
+
+	// 并发读取状态和历史不应导致 panic
+	done := make(chan bool, 10)
+	for i := 0; i < 10; i++ {
+		go func() {
+			_ = eng.State()
+			_ = eng.History()
+			_ = eng.Memories()
+			done <- true
+		}()
+	}
+	for i := 0; i < 10; i++ {
+		<-done
 	}
 }
 
 func TestEngineDefaultResponse(t *testing.T) {
 	contract := &domain.Contract{
-		RoleName: "贝利亚奥特曼",
+		RoleName: "浮士德",
 		State:    []domain.KeyValue{},
 		Rules:    []*domain.Rule{},
 	}
@@ -607,7 +710,7 @@ func TestEngineDefaultResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	expected := "贝利亚奥特曼 沉默地注视着命运。"
+	expected := "浮士德 沉默地注视着命运。"
 	if response != expected {
 		t.Errorf("default response = %v, want %v", response, expected)
 	}

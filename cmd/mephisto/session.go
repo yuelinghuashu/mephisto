@@ -155,9 +155,7 @@ func (s *Session) printWelcome() {
 	roleName := contract.RoleName
 
 	// ---- 构建变量映射 ----
-	vars := map[string]string{
-		"角色名": roleName,
-	}
+	vars := shared.BuildPlaceholderVars(roleName, map[string]any{})
 	for _, kv := range contract.State {
 		vars[kv.Key] = kv.Value
 	}

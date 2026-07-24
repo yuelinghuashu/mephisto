@@ -4,13 +4,16 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
+
+	"mephisto/internal/shared"
 )
 
 // 版本信息（构建时注入）
 var (
-	Version   = "v1.0.0"
+	Version   = "v1.0.1"
 	BuildTime = "2026-07-21"
 )
 
@@ -37,7 +40,6 @@ func printHelp() {
 子命令:
   parse <文件> [选项]                  解析 .meph 契约，输出 JSON
   run   <文件> [选项]                  启动交互式对话模式
-  check <文件>                        快速检查契约（供 VSCode 调用）
   version                             显示版本信息
   help                                显示此帮助信息
 
@@ -82,7 +84,27 @@ run 选项:
 `, p)
 }
 
-// printError 打印错误信息（统一格式）
+// printError 打印错误信息（统一格式）。
+//
+// 根据错误类型决定输出格式：
+//   - ParseError: 包含行号和区块名，输出 "❌ 第 N 行：消息"
+//   - EngineError: 包含错误码，输出 "❌ [CODE] 消息"
+//   - 其他: 输出 "❌ 消息"
+//
+// VSCode 插件可以通过 errors.As 提取 ParseError.Line 获取精确行号，
+// 无需从字符串中正则提取。
 func printError(err error) {
-	fmt.Fprintf(os.Stderr, "❌ %v\n", err)
+	var parseErr *shared.ParseError
+	var engineErr *shared.EngineError
+
+	switch {
+	case errors.As(err, &parseErr):
+		// ParseError 的 Error() 已经包含行号信息，直接输出
+		fmt.Fprintf(os.Stderr, "❌ %v\n", parseErr)
+	case errors.As(err, &engineErr):
+		// EngineError 的 Error() 已经包含 [CODE] 前缀，直接输出
+		fmt.Fprintf(os.Stderr, "❌ %v\n", engineErr)
+	default:
+		fmt.Fprintf(os.Stderr, "❌ %v\n", err)
+	}
 }

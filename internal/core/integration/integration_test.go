@@ -38,27 +38,40 @@ func TestFullIntegration(t *testing.T) {
 		t.Fatalf("解析 .meph 文件失败: %v", err)
 	}
 
-	// 攻击规则（无条件，必定匹配）
-	t.Run("触发攻击", func(t *testing.T) {
+	// 深入追问规则（无条件，必定匹配）
+	t.Run("触发深入追问", func(t *testing.T) {
 		eng := engine.New(contract)
-		response, err := eng.Run("我要攻击！", nil)
+		response, err := eng.Run("这是为什么？", nil)
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
-		if !strings.Contains(response, "全力攻击周围目标") {
-			t.Errorf("Run() response = %v, want contain 全力攻击周围目标", response)
+		if !strings.Contains(response, "引用经典") {
+			t.Errorf("Run() response = %v, want contain 引用经典", response)
 		}
 	})
 
-	// 防御规则（无条件，必定匹配）
-	t.Run("触发防御", func(t *testing.T) {
+	// 转移话题规则（无条件，必定匹配）
+	t.Run("触发转移话题", func(t *testing.T) {
 		eng := engine.New(contract)
-		response, err := eng.Run("我要防御！", nil)
+		response, err := eng.Run("够了！", nil)
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
-		if !strings.Contains(response, "防御姿态") {
-			t.Errorf("Run() response = %v, want contain 防御姿态", response)
+		if !strings.Contains(response, "沉默片刻") {
+			t.Errorf("Run() response = %v, want contain 沉默片刻", response)
+		}
+	})
+
+	// 狂放宣言规则（无条件，必定匹配）
+	// 选择"求索"以避免被前面带 roll() 的规则随机拦截
+	t.Run("触发狂放宣言", func(t *testing.T) {
+		eng := engine.New(contract)
+		response, err := eng.Run("我要求索！", nil)
+		if err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+		if !strings.Contains(response, "激情陈词") {
+			t.Errorf("Run() response = %v, want contain 激情陈词", response)
 		}
 	})
 
@@ -122,16 +135,18 @@ func TestIntegrationStatePersistence(t *testing.T) {
 	eng := engine.New(contract)
 
 	state := eng.State()
-	if val, ok := state["堕落指数"]; !ok || val != 85 {
-		t.Errorf("初始堕落指数 = %v, want 85", val)
+	// 注意：50 在 sample.meph 中是 "50"（字符串），ParseValue 会解析为 int(50)
+	if val, ok := state["灵魂完整度"]; !ok || val != 50 {
+		t.Errorf("初始灵魂完整度 = %v (%T), want 50", val, val)
 	}
 
-	_, err = eng.Run("你知道光之国吗？", nil)
+	// 使用包含"契约"的输入来触发梅菲斯特回声规则（注入类型）
+	_, err = eng.Run("契约不该被打破", nil)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 
-	// 触发光之国规则后应产生记忆
+	// 触发规则后应产生记忆（注入规则会追加记忆）
 	memories := eng.Memories()
 	if len(memories) == 0 {
 		t.Error("期望有记忆产生，但为空")

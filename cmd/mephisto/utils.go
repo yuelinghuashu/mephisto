@@ -1,40 +1,15 @@
 // cmd/mephisto/utils.go
 //
-// CLI 辅助函数
-// 职责：
-//  1. 加载契约文件
-//  2. 创建 LLM 客户端
+// CLI 辅助函数：创建 LLM 客户端
 //
-// 这两个函数从 commands.go 中拆离，保持 commands.go 的简洁。
+// 从 commands.go 中拆离，保持 commands.go 的简洁。
 package main
 
 import (
 	"fmt"
 
 	"mephisto/internal/core/llm"
-	"mephisto/internal/core/parser"
-	"mephisto/internal/domain"
 )
-
-// loadContract 加载并验证契约文件。
-//
-// 流程：
-//  1. 解析 .meph 文件为 domain.Contract
-//  2. 验证契约完整性（解析器已自动验证必填项）
-//
-// 参数：
-//   - filePath: .meph 文件的路径
-//
-// 返回值：
-//   - *domain.Contract: 已解析的契约
-//   - error: 加载失败时的错误
-func loadContract(filePath string) (*domain.Contract, error) {
-	contract, err := parser.ParseFile(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("加载契约失败：%w", err)
-	}
-	return contract, nil
-}
 
 // createLLMClient 根据配置创建对应的 LLM 客户端。
 //

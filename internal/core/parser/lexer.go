@@ -18,9 +18,10 @@
 package parser
 
 import (
-	"fmt"
 	"os"
 	"strings"
+
+	"mephisto/internal/shared"
 )
 
 // Line 表示带行号的内容行。
@@ -28,6 +29,7 @@ import (
 // 为什么要在 lexer 阶段就记录行号？
 //
 // lexer 在扫描时直接记录绝对行号，parser 拿到 Line 后
+//
 //	直接使用 Line.Number 报告错误，无需任何计算。
 //
 // 字段说明：
@@ -119,53 +121,86 @@ func isKnownBlock(name string) bool {
 
 // Lex 将 .meph 文本切分为区块列表。
 //
-// 输入：.meph 文件的完整文本内容（UTF-8 编码的字符串）。
-// 输出：区块列表 []Block，以及可能的错误。
+// 这是解析流程的第一阶段（词法分析 / 区块切分）。
+// 输入是 .meph 文件的完整文本内容（UTF-8 编码的字符串），
+// 输出是区块列表 []Block，以及可能的错误。
 //
 // 处理逻辑（按行扫描状态机）：
 //
 //	状态：inBlock = false（不在区块内）或 true（正在收集区块内容）
 //
-//	1. 当前行是标题（【xxx】）：
-//	   - 如果 inBlock == true，先保存当前区块
+//	1. 当前行是空行或注释（# 开头）：
+//	   - 如果 inBlock == true：将该行记录到当前区块的 Content 中（保留结构）
+//	   - 如果 inBlock == false：跳过该行（允许文件顶部有注释/空行）
+//
+//	2. 当前行是区块标题（【xxx】）：
+//	   - 如果 inBlock == true：先保存当前区块
 //	   - 开始新区块：记录标题、清空内容缓存、inBlock = true
 //	   - 继续下一行
 //
-//	2. 当前行不是标题：
-//	   - 如果 inBlock == false（在区块外）：
-//	     - 空行 → 忽略（允许文件前后的空行）
-//	     - 非空行 → 报错（内容出现在任何区块之外）
-//	   - 如果 inBlock == true（在区块内）：
-//	     - 累加当前行到内容缓存（同时记录行号）
+//	3. 当前行不是标题（普通内容行）：
+//	   - 如果 inBlock == false：报错（内容出现在任何区块之外）
+//	   - 如果 inBlock == true：累加当前行到内容缓存（同时记录行号）
 //
-//	3. 扫描结束后：
+//	4. 扫描结束后：
 //	   - 如果 inBlock == true，保存最后一个区块
 //	   - 检查是否至少有一个区块，没有则报错
 //
+// 为什么在 lexer 阶段就记录行号？
+//
+//	lexer 在扫描时直接记录绝对行号，parser 拿到 Line 后
+//	直接使用 Line.Number 报告错误，无需任何计算。
+//	这避免了 parser 维护复杂的迭代器状态。
+//
+// 空行和注释的处理策略：
+//
+//	空行和 # 注释在文件任何位置都是合法的：
+//	  - 在区块外：作为视觉分隔符或元数据，被跳过
+//	  - 在区块内：作为内容的一部分被保留，由上层 Parser 决定如何处理
+//
 // 边界情况处理：
-//   - 文件开头有空行 → 跳过，不报错
-//   - 区块之间有多个空行 → 跳过，不影响区块内容
-//   - 最后一个区块后有空行 → 跳过，不影响
+//   - 文件开头有空行或注释 → 跳过，不报错
+//   - 区块之间有多行注释 → 跳过，不影响区块切分
+//   - 最后一个区块后有注释 → 跳过，不影响
 //   - 标题行后立即跟下一个标题 → 第一个区块的 Content 为空（合法）
 //   - 文件中没有任何区块 → 报错 "没有有效区块"
+//
+// 参数：
+//   - text: .meph 文件的完整文本内容
+//
+// 返回值：
+//   - []Block: 切分后的区块列表
+//   - error: 解析错误（包含行号和错误描述）
 func Lex(text string) ([]Block, error) {
 	lines := strings.Split(text, "\n")
 
-	var blocks []Block
-	var currentBlockTitle string
-	var currentBlockContent []Line
-	var currentBlockLine int
+	var blocks []Block             // 区块列表
+	var currentBlockTitle string   // 当前区块的标题
+	var currentBlockContent []Line // 当前区块的内容行列表（不含标题行）
+	var currentBlockLine int       // 当前区块的标题行号
 	inBlock := false
 
 	for i, line := range lines {
 		lineNumber := i + 1
+		trimmed := strings.TrimSpace(line)
 
-		// ---- 处理区块外的空行 ----
-		if !inBlock && strings.TrimSpace(line) == "" {
+		// ---- 处理空行和注释（在任何位置都允许） ----
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			if inBlock {
+				// 在区块内：保留空行和注释，保持结构完整性
+				currentBlockContent = append(currentBlockContent, Line{
+					Text:   line,
+					Number: lineNumber,
+				})
+			}
+			// 在区块外：直接跳过
 			continue
 		}
 
 		// ---- 检查是否为区块标题 ----
+		//
+		// 标题格式：【标题名】
+		// 标题名必须通过白名单校验（isKnownBlock），防止拼写错误
 		if title, ok := isBlockTitle(line); ok {
 			// 如果已经在某个区块中，先保存旧区块
 			if inBlock {
@@ -184,12 +219,28 @@ func Lex(text string) ([]Block, error) {
 			continue
 		}
 
+		// ---- 检查不完整的区块标题格式（以 【 开头但缺少 】，或缺少 【 但有 】） ----
+		if strings.HasPrefix(trimmed, "【") || strings.HasSuffix(trimmed, "】") {
+			return nil, &shared.ParseError{
+				Line:    lineNumber,
+				Message: "区块标题格式错误",
+			}
+		}
+
 		// ---- 非标题行处理 ----
+		//
+		// 此时已确保：当前行不是空行、不是注释、不是标题
+		// 因此只能是普通内容行
 		if !inBlock {
-			return nil, fmt.Errorf("第 %d 行：内容出现在任何区块之外", lineNumber)
+			// 区块外的非空、非注释、非标题内容 → 格式错误
+			return nil, &shared.ParseError{
+				Line:    lineNumber,
+				Message: "内容出现在任何区块之外",
+			}
 		}
 
 		// 在区块内：累加当前行到内容缓存
+		// 注意：保留原始文本（包含缩进），不进行任何修剪
 		currentBlockContent = append(currentBlockContent, Line{
 			Text:   line,
 			Number: lineNumber,
@@ -207,7 +258,9 @@ func Lex(text string) ([]Block, error) {
 
 	// ---- 校验：至少有一个区块 ----
 	if len(blocks) == 0 {
-		return nil, fmt.Errorf("没有有效区块")
+		return nil, &shared.ParseError{
+			Message: "没有有效区块",
+		}
 	}
 
 	return blocks, nil

@@ -45,14 +45,6 @@ func main() {
 		}
 		os.Exit(0)
 
-	case CmdCheck:
-		// 检查契约
-		if err := runCheck(cfg); err != nil {
-			printError(err)
-			os.Exit(1)
-		}
-		os.Exit(0)
-
 	default:
 		printHelp()
 		os.Exit(1)

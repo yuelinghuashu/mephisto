@@ -8,12 +8,12 @@ import (
 	"flag"
 	"os"
 	"strconv"
+	"strings"
 )
 
 const (
 	CmdRun     = "run"
 	CmdParse   = "parse"
-	CmdCheck   = "check"
 	CmdVersion = "version"
 	CmdHelp    = "help"
 )
@@ -70,9 +70,6 @@ func LoadConfig() *AppConfig {
 
 	case CmdRun:
 		return parseRunArgs(args[1:])
-
-	case CmdCheck:
-		return parseCheckArgs(args[1:])
 
 	default:
 		// 隐式 parse 模式：第一个参数是文件路径
@@ -143,33 +140,11 @@ func parseRunArgs(args []string) *AppConfig {
 	return cfg
 }
 
-// parseCheckArgs 解析 check 子命令的参数。
-//
-// 用法：mephisto check <文件>
-func parseCheckArgs(args []string) *AppConfig {
-	cfg := &AppConfig{Command: CmdCheck}
-
-	fs := flag.NewFlagSet("check", flag.ContinueOnError)
-	fs.SetOutput(nil)
-
-	remaining := parseFlexible(fs, args)
-	if len(remaining) > 0 {
-		cfg.File = remaining[len(remaining)-1]
-	}
-
-	return cfg
-}
-
 // parseFlexible 灵活解析参数：支持选项出现在位置参数前后任意位置。
 //
-// Go 标准 flag 包的行为：遇到第一个非 flag 参数后停止解析 flag。
-// 此函数做两层扫描：
-//  1. 第一遍：找出所有以 "-" 开头的参数及其值，从 args 中移除
-//  2. 第二遍：用 FlagSet.Parse 解析剩余的纯 flag 参数
-//
-// 返回未解析的位置参数列表。
+// 策略：通过 fs.Lookup 识别已注册的 flag，正确区分布尔/非布尔 flag 的值消费。
+// 已知 flag 及其值被收集到 flagArgs 中，其余作为位置参数返回。
 func parseFlexible(fs *flag.FlagSet, args []string) []string {
-	// 先收集所有 "-" 开头的 flag 参数
 	var flagArgs []string
 	var positional []string
 
@@ -180,19 +155,36 @@ func parseFlexible(fs *flag.FlagSet, args []string) []string {
 			positional = append(positional, args[i+1:]...)
 			break
 		}
-		if len(arg) > 0 && arg[0] == '-' {
-			flagArgs = append(flagArgs, arg)
-			// 检查下一个参数是否是该 flag 的值（以 "-" 开头则为下一个 flag）
-			if i+1 < len(args) {
-				next := args[i+1]
-				if len(next) == 0 || next[0] != '-' {
-					// 下一个参数是 flag 的值（布尔 flag 会被 FlagSet.Parse 忽略）
-					flagArgs = append(flagArgs, next)
-					i++
-				}
-			}
-		} else {
+
+		// 非 flag 参数 → 位置参数
+		if len(arg) == 0 || arg[0] != '-' {
 			positional = append(positional, arg)
+			continue
+		}
+
+		// 以 - 开头：检查是否已注册的 flag
+		flagName := strings.TrimLeft(arg, "-")
+		fl := fs.Lookup(flagName)
+		if fl == nil {
+			// 未注册的 flag → 当作位置参数
+			positional = append(positional, arg)
+			continue
+		}
+
+		// 已注册的 flag：收集 flag 本身
+		flagArgs = append(flagArgs, arg)
+
+		// 判断是否为布尔 flag（默认值为 "false" 的即为布尔型）
+		isBool := fl.Value.String() == "false"
+
+		// 非布尔 flag 需要消费下一个参数作为值
+		if !isBool && i+1 < len(args) {
+			next := args[i+1]
+			// 值不能以 - 开头（否则是另一个 flag）
+			if len(next) > 0 && next[0] != '-' {
+				flagArgs = append(flagArgs, next)
+				i++
+			}
 		}
 	}
 

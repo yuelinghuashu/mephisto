@@ -11,7 +11,10 @@ package parser
 
 import (
 	"fmt"
+	"regexp"
+
 	"mephisto/internal/domain"
+	"mephisto/internal/shared"
 	"strings"
 )
 
@@ -37,14 +40,22 @@ func scanEntries(lines []Line, blockName string) ([]Entry, error) {
 
 		// 必须以 "-" 开头
 		if !strings.HasPrefix(trimmed, "-") {
-			return nil, fmt.Errorf("第 %d 行（区块「%s」）：列表项必须以 '-' 开头", line.Number, blockName)
+			return nil, &shared.ParseError{
+				Line:      line.Number,
+				BlockName: blockName,
+				Message:   "列表项必须以 '-' 开头",
+			}
 		}
 
 		rest := strings.TrimPrefix(trimmed, "-")
 		rest = strings.TrimSpace(rest)
 
 		if rest == "" {
-			return nil, fmt.Errorf("第 %d 行（区块「%s」）：列表项内容为空", line.Number, blockName)
+			return nil, &shared.ParseError{
+				Line:      line.Number,
+				BlockName: blockName,
+				Message:   "列表项内容为空",
+			}
 		}
 
 		entries = append(entries, Entry{
@@ -77,14 +88,14 @@ func splitKeyValue(s string) (string, string, bool) {
 	return "", "", false
 }
 
-// parseKeyValuePairs 是底层通用解析函数。
+// parseKeyValue 是底层通用解析函数。
 // 遍历行，提取 "- key: value" 格式的键值对，返回原始字符串键值对列表，且 key 不能为空。
 // 格式：
 //   - 键: 值
 //   - 键：值
 //
 // 空行和以 # 开头的行会被忽略。
-func parseKeyValuePairs(lines []Line, blockName string) ([]domain.KeyValue, error) {
+func parseKeyValue(lines []Line, blockName string) ([]domain.KeyValue, error) {
 	entries, err := scanEntries(lines, blockName)
 	if err != nil {
 		return nil, err
@@ -92,12 +103,29 @@ func parseKeyValuePairs(lines []Line, blockName string) ([]domain.KeyValue, erro
 
 	var result []domain.KeyValue
 	for _, entry := range entries {
+		// 检查行内 #（键值对中不允许包含裸露的 # 符号）
+		if strings.Contains(entry.Raw, "#") {
+			return nil, &shared.ParseError{
+				Line:      entry.Line,
+				BlockName: blockName,
+				Message:   "键值对中不允许包含 '#' 符号（注释必须位于行首）",
+			}
+		}
+
 		key, value, ok := splitKeyValue(entry.Raw)
 		if !ok {
-			return nil, fmt.Errorf("第 %d 行（区块「%s」）：键值对格式错误，缺少 ':' 或 '：'", entry.Line, blockName)
+			return nil, &shared.ParseError{
+				Line:      entry.Line,
+				BlockName: blockName,
+				Message:   "键值对格式错误，缺少 ':' 或 '：'",
+			}
 		}
 		if key == "" {
-			return nil, fmt.Errorf("第 %d 行（区块「%s」）：键不能为空", entry.Line, blockName)
+			return nil, &shared.ParseError{
+				Line:      entry.Line,
+				BlockName: blockName,
+				Message:   "键不能为空",
+			}
 		}
 		result = append(result, domain.KeyValue{Key: key, Value: value})
 	}
@@ -120,7 +148,10 @@ func parseRoleName(lines []Line, blockLine int) (string, error) {
 			return trimmed, nil
 		}
 	}
-	return "", fmt.Errorf("第 %d 行：角色名不能为空", blockLine)
+	return "", &shared.ParseError{
+		Line:    blockLine,
+		Message: "角色名不能为空",
+	}
 }
 
 // parseTextBlock 解析纯文本区块（世界观、角色背景、开局场景）。
@@ -139,28 +170,6 @@ func parseTextBlock(lines []Line) string {
 		sb.WriteString(line.Text)
 	}
 	return sb.String()
-}
-
-// parseKeyValueList 解析键值对列表（锚点、状态）。
-// 直接复用 parseKeyValuePairs。
-func parseKeyValueList(lines []Line, blockName string) ([]domain.KeyValue, error) {
-	return parseKeyValuePairs(lines, blockName)
-}
-
-// parseStateBlock 解析【状态】区块。
-// 复用 parseKeyValuePairs，然后对值自动转换为合适的类型（bool/int/float/string）。
-//
-// 为什么状态需要类型转换？
-//
-//	状态的值是动态变量（如情绪、生命值、位置），
-//	在引擎中需要参与逻辑判断（如 生命值 > 0），
-//	因此需要以正确的类型存储，而不是全部作为字符串。
-func parseStateBlock(lines []Line, blockName string) ([]domain.KeyValue, error) {
-	pairs, err := parseKeyValuePairs(lines, blockName)
-	if err != nil {
-		return nil, err
-	}
-	return pairs, nil
 }
 
 // parsePlainList 解析纯文本列表（【记忆】）。
@@ -206,6 +215,15 @@ func parseRules(lines []Line, blockName string) ([]*domain.Rule, error) {
 			continue
 		}
 
+		// 检查行内 #（规则语法中不应包含裸露的 # 符号）
+		if strings.Contains(trimmed, "#") {
+			return nil, &shared.ParseError{
+				Line:      line.Number,
+				BlockName: blockName,
+				Message:   "规则行中不允许包含 '#' 符号（注释必须位于行首）",
+			}
+		}
+
 		// parseRuleLine 解析单行规则
 		rule, err := parseRuleLine(trimmed, line.Number, blockName)
 		if err != nil {
@@ -216,6 +234,10 @@ func parseRules(lines []Line, blockName string) ([]*domain.Rule, error) {
 	return result, nil
 }
 
+// ruleNamePattern 匹配规则名的闭合位置：] + 任意空白 + if，不包含 if 后续字符。
+// 使用 ]\s*if\b 避免匹配条件或动作中的 if。
+var ruleNamePattern = regexp.MustCompile(`\]\s*if\b`)
+
 // parseRuleLine 解析单行规则。
 // 拆分为独立的函数，便于 parseRules 调用和单元测试。
 func parseRuleLine(line string, lineNumber int, blockName string) (*domain.Rule, error) {
@@ -223,29 +245,38 @@ func parseRuleLine(line string, lineNumber int, blockName string) (*domain.Rule,
 
 	// 规则必须以 [ 开头
 	if !strings.HasPrefix(trimmed, "[") {
-		return nil, fmt.Errorf("第 %d 行（区块「%s」）：规则必须以 '[' 开头", lineNumber, blockName)
+		return nil, &shared.ParseError{
+			Line:      lineNumber,
+			BlockName: blockName,
+			Message:   "规则必须以 '[' 开头",
+		}
 	}
 
-	// 找闭合的 ]
-	index := strings.Index(trimmed, "]")
-	if index == -1 {
-		return nil, fmt.Errorf("第 %d 行（区块「%s」）：规则缺少闭合的 ']'", lineNumber, blockName)
+	// 用正则定位 ] + 任意空白 + if 的位置，精确定位规则名闭合符。
+	// 这样即使条件中包含 ] 也不会被误匹配，同时兼容 ]if、] if、]  if 等多种写法。
+	loc := ruleNamePattern.FindStringIndex(trimmed)
+	if loc == nil || loc[0] == 0 {
+		return nil, &shared.ParseError{
+			Line:      lineNumber,
+			BlockName: blockName,
+			Message:   "规则格式错误，需要 '[规则名] if 条件 -> 动作'",
+		}
 	}
+
+	closeBracket := loc[0] // ] 的位置
 
 	// 提取规则名
-	name := strings.TrimSpace(trimmed[1:index])
+	name := strings.TrimSpace(trimmed[1:closeBracket])
 	if name == "" {
-		return nil, fmt.Errorf("第 %d 行（区块「%s」）：规则名不能为空", lineNumber, blockName)
+		return nil, &shared.ParseError{
+			Line:      lineNumber,
+			BlockName: blockName,
+			Message:   "规则名不能为空",
+		}
 	}
 
-	// 提取条件和动作
-	rest := strings.TrimSpace(trimmed[index+1:])
-	if !strings.HasPrefix(rest, "if ") {
-		return nil, fmt.Errorf("第 %d 行（区块「%s」）：规则条件必须以 'if ' 开头", lineNumber, blockName)
-	}
-
-	// 移除 if 前缀
-	rest = strings.TrimPrefix(rest, "if")
+	// 提取条件和动作：跳过 ] 和 if（含中间的空白）
+	rest := strings.TrimSpace(trimmed[loc[1]:])
 	rest = strings.TrimSpace(rest)
 
 	// 取第一个 "->" 分割条件和动作。
@@ -253,14 +284,22 @@ func parseRuleLine(line string, lineNumber int, blockName string) (*domain.Rule,
 	// 条件中若包含 "->" 则会被误分割，但实际规则中极少出现，这是设计上的取舍。
 	cond, action, ok := strings.Cut(rest, "->")
 	if !ok {
-		return nil, fmt.Errorf("第 %d 行（区块「%s」）：规则缺少 '->'", lineNumber, blockName)
+		return nil, &shared.ParseError{
+			Line:      lineNumber,
+			BlockName: blockName,
+			Message:   "规则缺少 '->'",
+		}
 	}
 
 	// 提取条件和动作
 	cond = strings.TrimSpace(cond)
 	action = strings.TrimSpace(action)
 	if cond == "" || action == "" {
-		return nil, fmt.Errorf("第 %d 行（区块「%s」）：规则的条件或动作不能为空", lineNumber, blockName)
+		return nil, &shared.ParseError{
+			Line:      lineNumber,
+			BlockName: blockName,
+			Message:   "规则的条件或动作不能为空",
+		}
 	}
 
 	// 提取互斥组（可选）
@@ -294,36 +333,40 @@ func parseRuleLine(line string, lineNumber int, blockName string) (*domain.Rule,
 // 为什么支持 \n 转义？因为历史内容可能包含多行文本，
 // 但 .meph 是纯文本格式，用 \n 表示换行是通用的做法。
 func parseHistory(lines []Line, blockName string) ([]domain.HistoryEntry, error) {
-    entries, err := scanEntries(lines, blockName)
-    if err != nil {
-        return nil, err
-    }
+	entries, err := scanEntries(lines, blockName)
+	if err != nil {
+		return nil, err
+	}
 
-    var result []domain.HistoryEntry
-    for _, entry := range entries {
-        var role, content string
-        var ok bool
+	var result []domain.HistoryEntry
+	for _, entry := range entries {
+		var role, content string
+		var ok bool
 
-        if strings.HasPrefix(entry.Raw, "fate:") || strings.HasPrefix(entry.Raw, "fate：") {
-            role = "fate"
-            content = strings.TrimPrefix(strings.TrimPrefix(entry.Raw, "fate:"), "fate：")
-            content = strings.TrimSpace(content)
-            ok = true
-        } else if strings.HasPrefix(entry.Raw, "assistant:") || strings.HasPrefix(entry.Raw, "assistant：") {
-            role = "assistant"
-            content = strings.TrimPrefix(strings.TrimPrefix(entry.Raw, "assistant:"), "assistant：")
-            content = strings.TrimSpace(content)
-            ok = true
-        }
+		if strings.HasPrefix(entry.Raw, "fate:") || strings.HasPrefix(entry.Raw, "fate：") {
+			role = "fate"
+			content = strings.TrimPrefix(strings.TrimPrefix(entry.Raw, "fate:"), "fate：")
+			content = strings.TrimSpace(content)
+			ok = true
+		} else if strings.HasPrefix(entry.Raw, "assistant:") || strings.HasPrefix(entry.Raw, "assistant：") {
+			role = "assistant"
+			content = strings.TrimPrefix(strings.TrimPrefix(entry.Raw, "assistant:"), "assistant：")
+			content = strings.TrimSpace(content)
+			ok = true
+		}
 
-        if !ok {
-            return nil, fmt.Errorf("第 %d 行（区块「%s」）：历史条目必须以 'fate:' 或 'assistant:' 开头", entry.Line, blockName)
-        }
+		if !ok {
+			return nil, &shared.ParseError{
+				Line:      entry.Line,
+				BlockName: blockName,
+				Message:   "历史条目必须以 'fate:' 或 'assistant:' 开头",
+			}
+		}
 
-        content = strings.ReplaceAll(content, "\\n", "\n")
-        result = append(result, domain.HistoryEntry{Role: role, Content: content})
-    }
-    return result, nil
+		content = strings.ReplaceAll(content, "\\n", "\n")
+		result = append(result, domain.HistoryEntry{Role: role, Content: content})
+	}
+	return result, nil
 }
 
 // ============================================================
@@ -342,7 +385,19 @@ func parseBlocks(blocks []Block) (*domain.Contract, error) {
 		// 其他切片类型统一为 nil（序列化时会被 omitempty 忽略）
 	}
 
+	seenBlocks := make(map[string]struct{})
+
 	for _, block := range blocks {
+		// 检测重复区块
+		if _, ok := seenBlocks[block.Title]; ok {
+			return nil, &shared.ParseError{
+				Line:      block.Line,
+				BlockName: block.Title,
+				Message:   fmt.Sprintf("重复的区块「%s」", block.Title),
+			}
+		}
+		seenBlocks[block.Title] = struct{}{}
+
 		switch block.Title {
 		case "角色名":
 			value, err := parseRoleName(block.Content, block.Line)
@@ -351,7 +406,7 @@ func parseBlocks(blocks []Block) (*domain.Contract, error) {
 			}
 			contract.RoleName = value
 		case "锚点":
-			value, err := parseKeyValueList(block.Content, block.Title)
+			value, err := parseKeyValue(block.Content, block.Title)
 			if err != nil {
 				return nil, err
 			}
@@ -363,7 +418,7 @@ func parseBlocks(blocks []Block) (*domain.Contract, error) {
 		case "开局场景":
 			contract.Opening = parseTextBlock(block.Content)
 		case "状态":
-			value, err := parseStateBlock(block.Content, block.Title)
+			value, err := parseKeyValue(block.Content, block.Title)
 			if err != nil {
 				return nil, err
 			}
@@ -387,10 +442,12 @@ func parseBlocks(blocks []Block) (*domain.Contract, error) {
 			}
 			contract.History = value
 		default:
-			// 未知区块：理论上不会发生，因为 isKnownBlock 已过滤。
-			// 静默忽略，保持向前兼容。
+			// 自定义区块：静默忽略（相当于注释区块）
+			// 这些区块通过 MEPHISTO_EXTRA_BLOCKS 环境变量定义，
+			// 被 Lexer 识别为合法区块，但不产生任何数据。
 			continue
 		}
 	}
+	
 	return contract, nil
 }

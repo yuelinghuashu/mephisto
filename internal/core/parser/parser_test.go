@@ -141,7 +141,7 @@ func TestParseErrors(t *testing.T) {
 	}{
 		{
 			name:    "区块外有内容",
-			input:   "这是区块外的内容\n【角色名】\n贝利亚奥特曼",
+			input:   "这是区块外的内容\n【角色名】\n浮士德",
 			wantErr: "内容出现在任何区块之外",
 		},
 		{
@@ -177,7 +177,7 @@ func TestParseErrors(t *testing.T) {
 		{
 			name:    "规则缺少 if",
 			input:   "【规则】\n[攻击] 包含 \"攻击\" -> 攻击",
-			wantErr: "必须以 'if ' 开头",
+			wantErr: "规则格式错误",
 		},
 		{
 			name:    "历史角色无效",
@@ -219,8 +219,8 @@ func TestParseErrors(t *testing.T) {
 // 单元测试：公共解析函数
 // ============================================================
 
-// TestParseKeyValuePairs 测试 parseKeyValuePairs 函数。
-func TestParseKeyValuePairs(t *testing.T) {
+// TestParseKeyValue 测试 parseKeyValue 函数。
+func TestParseKeyValue(t *testing.T) {
 	tests := []struct {
 		name      string
 		lines     []Line
@@ -276,9 +276,9 @@ func TestParseKeyValuePairs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseKeyValuePairs(tt.lines, tt.blockName)
+			got, err := parseKeyValue(tt.lines, tt.blockName)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseKeyValuePairs() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("parseKeyValue() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if err != nil {
@@ -388,8 +388,8 @@ func TestParseRuleLine(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:       "缺少 [",
-			line:       `攻击 if 条件 -> 动作`,
+			name:       "规则缺少 if",
+			line:       `[攻击] 包含 "攻击" -> 攻击`,
 			lineNumber: 1,
 			blockName:  "规则",
 			want:       nil,
@@ -438,6 +438,14 @@ func TestParseRuleLine(t *testing.T) {
 		{
 			name:       "动作为空",
 			line:       `[攻击] if 条件 ->`,
+			lineNumber: 1,
+			blockName:  "规则",
+			want:       nil,
+			wantErr:    true,
+		},
+		{
+			name:       "规则名被条件中的 ] 误闭合",
+			line:       `[攻击 if 包含 "武器]" -> 攻击`,
 			lineNumber: 1,
 			blockName:  "规则",
 			want:       nil,
