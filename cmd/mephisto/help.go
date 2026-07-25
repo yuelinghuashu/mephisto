@@ -13,7 +13,7 @@ import (
 
 // 版本信息（构建时注入）
 var (
-	Version   = "v1.0.2"
+	Version   = "v1.0.3"
 	BuildTime = "2026-07-25"
 )
 
@@ -38,6 +38,7 @@ func printHelp() {
   %[1]s <文件>                        # 简写，等价于 parse
 
 子命令:
+  init  [模板名]                       生成示例契约文件（默认 sample.meph）
   parse <文件> [选项]                  解析 .meph 契约，输出 JSON
   run   <文件> [选项]                  启动交互式对话模式
   version                             显示版本信息
@@ -70,6 +71,8 @@ run 选项:
   exit / quit / q                     退出对话
 
 示例:
+  %[1]s init                                      生成 sample.meph
+  %[1]s init faust                                生成 faust.meph
   %[1]s data/sample.meph                          解析并输出 JSON（简写）
   %[1]s parse data/sample.meph                    同上，完整写法
   %[1]s parse data/sample.meph -o out.json        解析并保存到文件

@@ -37,6 +37,14 @@ func main() {
 		}
 		os.Exit(0)
 
+	case CmdInit:
+		// 生成示例契约文件
+		if err := runInit(cfg.InitTemplate); err != nil {
+			printError(err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+
 	case CmdRun:
 		// 运行交互式会话
 		if err := runInteractive(cfg); err != nil {

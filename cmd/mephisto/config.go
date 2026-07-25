@@ -14,6 +14,7 @@ import (
 const (
 	CmdRun     = "run"
 	CmdParse   = "parse"
+	CmdInit    = "init"
 	CmdVersion = "version"
 	CmdHelp    = "help"
 )
@@ -25,11 +26,12 @@ type AppConfig struct {
 	File    string // .meph 文件路径
 
 	// ---- 运行时行为 ----
-	Branch string // 分支名（多分支故事线）
-	Reset  bool   // 忽略子版存档
-	Debug  bool   // 启用规则调试
-	Quiet  bool   // 静默模式
-	Output string // 输出文件路径（parse 命令）
+	InitTemplate string // 初始化模板名（init 命令）
+	Branch       string // 分支名（多分支故事线）
+	Reset        bool   // 忽略子版存档
+	Debug        bool   // 启用规则调试
+	Quiet        bool   // 静默模式
+	Output       string // 输出文件路径（parse 命令）
 
 	// ---- 约束配置 ----
 	ConstraintsFile string // 自定义约束文件路径（空=使用默认）
@@ -70,6 +72,14 @@ func LoadConfig() *AppConfig {
 	switch first {
 	case CmdParse:
 		return parseParseArgs(args[1:])
+
+	case CmdInit:
+		// 支持 mephisto init <模板名>
+		cfg := &AppConfig{Command: CmdInit, InitTemplate: ""}
+		if len(args) > 1 && args[1] != "" && args[1][0] != '-' {
+			cfg.InitTemplate = args[1]
+		}
+		return cfg
 
 	case CmdRun:
 		return parseRunArgs(args[1:])

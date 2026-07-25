@@ -7,13 +7,6 @@
 > **长线叙事引擎 —— 用纯文本契约文件驱动规则与大模型**
 
 <p align="center">
-  <i>Mephisto is a long-form narrative engine that drives rules and LLMs with plain-text contract files.</i>
-</p>
-<p align="center">
-  <i>📖 Documents are in Chinese. English translation is not yet available.</i>
-</p>
-
-<p align="center">
   <i>"梅菲斯特与你立约。"</i>
 </p>
 
@@ -21,6 +14,7 @@
   <img src="https://img.shields.io/badge/version-v1.0.2-blue" alt="Version">
   <img src="https://img.shields.io/badge/Go-1.26+-00ADD8" alt="Go Version">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
+  <a href="./README.en.md"><img src="https://img.shields.io/badge/lang-en-red" alt="English"></a>
 </p>
 
 ---
@@ -224,6 +218,7 @@ go build -o ./mephisto ./cmd/mephisto
 ./mephisto <子命令> [选项] <文件>
 
 子命令:
+  init  [模板名]                 生成示例契约文件（默认 sample.meph）
   parse <文件> [选项]           解析 .meph 契约，输出 JSON
   run   <文件> [选项]           启动交互式对话模式
   version                       显示版本信息
@@ -244,12 +239,12 @@ run 选项:
   -constraints <文件>           自定义输出约束文件（默认使用内置约束）
   -max-tokens <N>               最大生成 Token 数（默认 4096）
 
-  交互模式命令:
-    /state                     显示当前状态
-    /history                   显示对话历史
-    /rules                     显示当前规则
-    /save                      手动保存进度
-    exit / quit / q            退出对话
+交互模式命令:
+  /state                       显示当前状态
+  /history                     显示对话历史
+  /rules                       显示当前规则
+  /save                        手动保存进度
+  exit / quit / q              退出对话
 
 环境变量:
   OPENAI_API_KEY                API 密钥（优先级低于命令行）

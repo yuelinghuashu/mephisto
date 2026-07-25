@@ -1,5 +1,5 @@
-data/*.txt
-data/*_child.meph
+data/*
 my-style.txt
 .env
 releases/
+

@@ -5,7 +5,7 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [v1.1.0] — 2026-07-25
+## [v1.0.3] — 2026-07-25
 
 ### 🚀 新特性
 
@@ -21,10 +21,13 @@
 - **`Engine` 新增 `ReloadContract()` 方法**：从 `.meph` 文件重新加载规则，保留状态和历史不变，用于热重载场景
 - **`Runtime` 新增 `ReplaceRules()` 方法**：线程安全地替换运行时规则列表
 - **`Session` 集成 `fsnotify` 文件监听**：新增 `watchFileChanges()` 后台协程，监听子版文件变更，500ms 防抖避免频繁触发
+- **`Makefile` 完善**：新增 `build`、`run`、`clean` 目标，`make build` 编译，`make run` 编译并运行，`make clean` 清理产物
+- **`help.go` 与 `README` 更新**：子命令列表新增 `init`，交互模式命令集中列出（`/state`、`/history`、`/rules`、`/save`）
 
 ---
 
-## [v1.0.2] — 2026-07-24
+<details>
+<summary><strong>v1.0.2</strong> — 2026-07-24</summary>
 
 ### 🚀 新特性
 
@@ -54,6 +57,8 @@
 - **废弃 `check` 子命令**：VSCode 插件已有独立 TypeScript 解析器，CLI 的 `check` 命令完全冗余。删除了 `CheckResult`、`CheckError`、`CheckOutlineItem` 类型及相关函数（`runCheck`、`buildOutline`、`outputCheckError`）
 - **删除 `ParseErrorLine` 函数**：未被任何代码调用
 - **内联 `loadContract`**：简单包装 `parser.ParseFile` 的直接调用
+
+</details>
 
 ---
 
