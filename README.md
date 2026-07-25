@@ -309,3 +309,18 @@ mephisto/
 ## 📄 License
 
 MIT
+
+---
+
+## ☕ 赞助支持
+
+如果你觉得 Mephisto 对你有所帮助，欢迎请我喝杯咖啡 ☕  
+每一份支持都会让这个项目走得更远。
+
+<details>
+<summary>点击展开收款码</summary>
+
+<img src="./assets/ali-pay.jpg" width="200" height="280" alt="支付宝收款码" />
+<img src="./assets/wechat-pay.jpg" width="200" height="280" alt="微信收款码" />
+
+</details>
