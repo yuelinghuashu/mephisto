@@ -7,6 +7,13 @@
 > **长线叙事引擎 —— 用纯文本契约文件驱动规则与大模型**
 
 <p align="center">
+  <i>Mephisto is a long-form narrative engine that drives rules and LLMs with plain-text contract files.</i>
+</p>
+<p align="center">
+  <i>📖 Documents are in Chinese. English translation is not yet available.</i>
+</p>
+
+<p align="center">
   <i>"梅菲斯特与你立约。"</i>
 </p>
 
@@ -32,6 +39,7 @@
 - 🎯 **命运视角**：你是"命运"（叙事的推动者），输入指令，驱动角色行动
 - 🎲 **骰子透明**：每次判定结果实时展示给用户，规则名 + 点数 + ✅/❌ 一目了然
 - 🔌 **VS Code 扩展**：语法高亮、实时诊断、代码补全、悬停提示、格式化、大纲视图，[一键安装](https://marketplace.visualstudio.com/items?itemName=yuelinghuashu.vscode-mephisto)
+- ♻️ **规则热重载**：编辑子版文件后保存即自动生效，无需退出对话，配合 VS Code 插件体验最佳；对话中可随时输入 `/rules` 查看当前规则详情
 
 ---
 
@@ -235,6 +243,13 @@ run 选项:
   -base-url <URL>               API 基础 URL
   -constraints <文件>           自定义输出约束文件（默认使用内置约束）
   -max-tokens <N>               最大生成 Token 数（默认 4096）
+
+  交互模式命令:
+    /state                     显示当前状态
+    /history                   显示对话历史
+    /rules                     显示当前规则
+    /save                      手动保存进度
+    exit / quit / q            退出对话
 
 环境变量:
   OPENAI_API_KEY                API 密钥（优先级低于命令行）

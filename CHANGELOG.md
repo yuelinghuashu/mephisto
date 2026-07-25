@@ -11,11 +11,16 @@
 
 - **自定义输出约束**：新增 `--constraints` 命令行参数，支持通过外部纯文本文件定义 LLM 输出格式要求（如诗歌风格、字数限制等），`.meph` 契约文件保持纯净
 - **`llm.LoadConstraints()` 函数**：新增从文件读取自定义约束的公共 API，路径为空时自动使用默认 `NarrativeConstraints`
+- **规则热重载**：子版文件保存后自动检测变更并应用新规则，无需退出对话。配合 VS Code 插件使用体验最佳（编辑 → 保存 → 立即生效）
+- **`/rules` 命令**：新增内置命令，显示当前所有规则的详细信息（条件、动作、互斥组），方便确认运行状态
 
 ### 🔧 重构
 
 - **`Engine` 新增 `WithConstraints()` Option**：约束字符串通过 Option 模式注入引擎，`callLLM()` 调用 `BuildPrompt` 时传入自定义约束而非硬编码默认值
 - **`NarrativeConstraints` 改为 `var`**：从 `const` 改为 `var` 以便与 `LoadConstraints` 组合使用
+- **`Engine` 新增 `ReloadContract()` 方法**：从 `.meph` 文件重新加载规则，保留状态和历史不变，用于热重载场景
+- **`Runtime` 新增 `ReplaceRules()` 方法**：线程安全地替换运行时规则列表
+- **`Session` 集成 `fsnotify` 文件监听**：新增 `watchFileChanges()` 后台协程，监听子版文件变更，500ms 防抖避免频繁触发
 
 ---
 

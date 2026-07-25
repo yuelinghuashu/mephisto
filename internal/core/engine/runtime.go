@@ -182,6 +182,13 @@ func (r *Runtime) ReplaceState(state map[string]any) {
 	r.state = maps.Clone(state)
 }
 
+// ReplaceRules 替换规则列表（用于热重载）。
+func (r *Runtime) ReplaceRules(rules []*domain.Rule) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.contract.Rules = rules
+}
+
 // ClearHistory 清空历史记录。
 func (r *Runtime) ClearHistory() {
 	r.mu.Lock()

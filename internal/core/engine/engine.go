@@ -33,6 +33,7 @@ import (
 	"strings"
 
 	"mephisto/internal/core/llm"
+	"mephisto/internal/core/parser"
 	"mephisto/internal/domain"
 	"mephisto/internal/shared"
 )
@@ -356,4 +357,22 @@ func (e *Engine) Memories() []string {
 // Contract 返回契约（只读）。
 func (e *Engine) Contract() *domain.Contract {
 	return e.runtime.Contract()
+}
+
+// Rules 返回当前规则列表的副本（只读）。
+func (e *Engine) Rules() []*domain.Rule {
+	return e.runtime.Contract().Rules
+}
+
+// ReloadContract 从 .meph 文件重新加载契约（仅更新规则，保留状态和历史）。
+//
+// 用于热重载场景：用户在编辑器中修改规则文件后保存，引擎自动检测变更并应用新规则。
+// 如果解析失败，保留旧规则并返回错误。
+func (e *Engine) ReloadContract(childPath string) error {
+	contract, err := parser.ParseFile(childPath)
+	if err != nil {
+		return fmt.Errorf("热重载解析失败: %w", err)
+	}
+	e.runtime.ReplaceRules(contract.Rules)
+	return nil
 }

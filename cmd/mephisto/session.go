@@ -7,8 +7,10 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/fsnotify/fsnotify"
 
 	"mephisto/internal/core/engine"
 	"mephisto/internal/shared"
@@ -23,6 +25,7 @@ import (
 //   - reset    : 是否忽略子版存档，从母版重新开始
 //   - childPath: 子版文件路径（用于显示）
 //   - hasChild : 是否已加载子版（缓存，避免重复加载）
+//   - stopWatch: 用于停止热重载监听器的通道
 type Session struct {
 	engine    *engine.Engine
 	filename  string
@@ -30,15 +33,17 @@ type Session struct {
 	reset     bool
 	childPath string
 	hasChild  bool
+	stopWatch chan struct{}
 }
 
 // NewSession 创建交互会话实例。
 func NewSession(eng *engine.Engine, filename string, branch string, reset bool) *Session {
 	return &Session{
-		engine:   eng,
-		filename: filename,
-		branch:   branch,
-		reset:    reset,
+		engine:    eng,
+		filename:  filename,
+		branch:    branch,
+		reset:     reset,
+		stopWatch: make(chan struct{}),
 	}
 }
 
@@ -48,10 +53,11 @@ func NewSession(eng *engine.Engine, filename string, branch string, reset bool) 
 //  1. 如果 reset 为 true，跳过子版加载
 //  2. 否则尝试加载子版（如果存在）
 //  3. 打印欢迎信息
-//  4. 注册退出时的自动保存
-//  5. 进入对话循环
-//  6. 每轮对话后自动保存
-//  7. 支持 /save 手动保存
+//  4. 启动文件监听（热重载规则）
+//  5. 注册退出时的自动保存
+//  6. 进入对话循环
+//  7. 每轮对话后自动保存
+//  8. 支持 /save 手动保存
 func (s *Session) Start() error {
 	// ---- 1. 构建子版路径 ----
 	s.childPath = engine.BuildChildPath(s.filename, s.branch)
@@ -89,8 +95,12 @@ func (s *Session) Start() error {
 	// ---- 3. 打印欢迎信息 ----
 	s.printWelcome()
 
-	// ---- 4. 退出时自动保存 ----
+	// ---- 4. 启动文件监听（热重载规则） ----
+	go s.watchFileChanges()
+
+	// ---- 5. 退出时自动保存并停止监听 ----
 	defer func() {
+		close(s.stopWatch)
 		if err := s.engine.Save(s.filename, s.branch); err != nil {
 			fmt.Printf("\n⚠️ 自动保存失败: %v\n", err)
 		} else {
@@ -98,7 +108,7 @@ func (s *Session) Start() error {
 		}
 	}()
 
-	// ---- 5. 进入对话循环 ----
+	// ---- 6. 进入对话循环 ----
 	for {
 		var input string
 		prompt := &survey.Input{
@@ -118,7 +128,7 @@ func (s *Session) Start() error {
 			continue
 		}
 
-		// ---- 6. 命令处理 ----
+		// ---- 7. 命令处理 ----
 		switch {
 		case s.isExitCommand(input):
 			fmt.Println("契约终结。梅菲斯特静候下一次召唤。")
@@ -130,6 +140,9 @@ func (s *Session) Start() error {
 		case s.isHistoryCommand(input):
 			s.showHistory()
 
+		case s.isRulesCommand(input):
+			s.showRules()
+
 		case s.isSaveCommand(input):
 			if err := s.engine.Save(s.filename, s.branch); err != nil {
 				fmt.Printf("❌ 保存失败: %v\n", err)
@@ -138,13 +151,62 @@ func (s *Session) Start() error {
 			}
 
 		default:
-			// ---- 7. 普通输入：交给引擎（引擎内部自动处理记忆提取） ----
+			// ---- 8. 普通输入：交给引擎（引擎内部自动处理记忆提取） ----
 			s.handleInput(input)
 
-			// ---- 8. 每轮对话后自动保存 ----
+			// ---- 9. 每轮对话后自动保存 ----
 			if err := s.engine.Save(s.filename, s.branch); err != nil {
 				fmt.Printf("\n⚠️ 自动保存失败: %v\n", err)
 			}
+		}
+	}
+}
+
+// watchFileChanges 监听子版文件的变更，实现热重载。
+//
+// 用户可以在编辑器中修改规则文件并保存，引擎自动检测变更并应用新规则。
+// 监听只在子版已加载（hasChild = true）时启动。
+func (s *Session) watchFileChanges() {
+	if !s.hasChild {
+		return
+	}
+
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return // 监听失败，静默跳过（不影响主流程）
+	}
+	defer watcher.Close()
+
+	if err := watcher.Add(s.childPath); err != nil {
+		return
+	}
+
+	// 防抖：短时间内多次写入只触发一次重载
+	var lastEvent time.Time
+
+	for {
+		select {
+		case event := <-watcher.Events:
+			if event.Op&(fsnotify.Write|fsnotify.Create) == 0 {
+				continue
+			}
+			// 防抖：500ms 内的多次写入只处理一次
+			if time.Since(lastEvent) < 500*time.Millisecond {
+				continue
+			}
+			lastEvent = time.Now()
+			time.Sleep(50 * time.Millisecond) // 等待文件写入完成
+
+			if err := s.engine.ReloadContract(s.childPath); err != nil {
+				fmt.Printf("\n⚠️ 规则热重载失败: %v\n", err)
+				fmt.Print("命运 >")
+			} else {
+				fmt.Printf("\n📜 规则已热更新（%d 条）\n", len(s.engine.Rules()))
+				fmt.Print("命运 >")
+			}
+
+		case <-s.stopWatch:
+			return
 		}
 	}
 }
@@ -225,7 +287,9 @@ func (s *Session) printWelcome() {
 	fmt.Printf("💡 输入 'exit' 或 'quit' 或 'q' 退出对话\n")
 	fmt.Printf("💡 输入 '/state' 查看当前状态\n")
 	fmt.Printf("💡 输入 '/history' 查看对话历史\n")
+	fmt.Printf("💡 输入 '/rules' 查看当前规则\n")
 	fmt.Printf("💡 输入 '/save' 手动保存进度\n")
+	fmt.Printf("💡 编辑规则文件后保存，引擎自动热重载\n")
 	fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
 }
 
@@ -233,12 +297,13 @@ func (s *Session) printWelcome() {
 // 命令判断方法
 // ============================================================
 
-func (s *Session) isSaveCommand(input string) bool { return input == "/save" }
+func (s *Session) isSaveCommand(input string) bool    { return input == "/save" }
+func (s *Session) isRulesCommand(input string) bool   { return input == "/rules" }
+func (s *Session) isStateCommand(input string) bool   { return input == "/state" }
+func (s *Session) isHistoryCommand(input string) bool { return input == "/history" }
 func (s *Session) isExitCommand(input string) bool {
 	return input == "exit" || input == "quit" || input == "q"
 }
-func (s *Session) isStateCommand(input string) bool   { return input == "/state" }
-func (s *Session) isHistoryCommand(input string) bool { return input == "/history" }
 
 // ============================================================
 // 显示方法
@@ -272,6 +337,22 @@ func (s *Session) showHistory() {
 			role = "角色"
 		}
 		fmt.Printf("  %s: %s\n", role, entry.Content)
+	}
+}
+
+func (s *Session) showRules() {
+	rules := s.engine.Rules()
+	if len(rules) == 0 {
+		fmt.Println("当前没有规则")
+		return
+	}
+	fmt.Printf("📜 当前规则（共 %d 条）：\n", len(rules))
+	for i, rule := range rules {
+		groupInfo := ""
+		if rule.Group != "" {
+			groupInfo = fmt.Sprintf(" [group:%s]", rule.Group)
+		}
+		fmt.Printf("  %d. [%s] if %s -> %s%s\n", i+1, rule.Name, rule.Cond, rule.Action, groupInfo)
 	}
 }
 

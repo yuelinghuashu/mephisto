@@ -13,8 +13,8 @@ import (
 
 // 版本信息（构建时注入）
 var (
-	Version   = "v1.0.1"
-	BuildTime = "2026-07-21"
+	Version   = "v1.0.2"
+	BuildTime = "2026-07-25"
 )
 
 // printVersion 打印版本信息
@@ -63,10 +63,11 @@ run 选项:
   -max-tokens <N>                     最大生成 Token 数（默认 4096）
 
 交互模式 (run) 内置命令:
-  /state                   显示当前状态
-  /history                 显示对话历史
-  /save                    手动保存进度
-  exit / quit / q          退出对话
+  /state                              显示当前状态
+  /history                            显示对话历史
+  /rules                              显示当前规则
+  /save                               手动保存进度
+  exit / quit / q                     退出对话
 
 示例:
   %[1]s data/sample.meph                          解析并输出 JSON（简写）
