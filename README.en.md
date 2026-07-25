@@ -84,7 +84,7 @@ make build
 ./mephisto init
 
 # Run
-./mephisto run data/sample.meph
+./mephisto run data/faust.meph
 
 # Or with make
 make run

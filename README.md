@@ -93,7 +93,7 @@ MEPHISTO_MODEL=llama3.2
 go build -o ./mephisto ./cmd/mephisto
 
 # 运行
-./mephisto run data/sample.meph
+./mephisto run data/faust.meph
 ```
 
 ### 3. 交互示例
