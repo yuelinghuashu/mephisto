@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo-dark.svg" alt="Mephisto Logo" width="200">
+  <img src="./assets/logo.svg" alt="Mephisto Logo" width="200">
 </p>
 
 # 梅菲斯特（Mephisto）
