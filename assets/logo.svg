@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="100%" height="100%">
+  <defs>
+    <style>
+      @keyframes pulse { 0%, 100% { opacity: 0.7; } 50% { opacity: 1; } }
+      @keyframes float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-3px); } }
+      .core-glow { animation: pulse 3s infinite ease-in-out; }
+      .float { animation: float 4s infinite ease-in-out; }
+    </style>
+
+    <radialGradient id="bg" cx="50%" cy="45%" r="65%">
+      <stop offset="0%" stop-color="#1E1A22"/>
+      <stop offset="100%" stop-color="#0E0C10"/>
+    </radialGradient>
+
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F4E6C1"/>
+      <stop offset="25%" stop-color="#E8D5A3"/>
+      <stop offset="50%" stop-color="#C9A84C"/>
+      <stop offset="75%" stop-color="#8A7A3C"/>
+      <stop offset="100%" stop-color="#5C4A1E"/>
+    </linearGradient>
+
+    <linearGradient id="darkGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8A7A3C"/>
+      <stop offset="100%" stop-color="#5C4A1E"/>
+    </linearGradient>
+
+    <linearGradient id="textGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E8D5A3"/>
+      <stop offset="50%" stop-color="#D1B464"/>
+      <stop offset="100%" stop-color="#C9A84C"/>
+    </linearGradient>
+
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+    
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+
+    <filter id="textGlow" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="1.2" result="blur"/>
+      <feFlood flood-color="#C9A84C" flood-opacity="0.3" result="color"/>
+      <feComposite in="color" in2="blur" operator="in" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="600" height="600" fill="url(#bg)"/>
+
+  <!-- 中心结构：“命运之眼” -->
+  <g transform="translate(300, 270)">
+    <circle cx="0" cy="0" r="100" fill="none" stroke="url(#gold)" stroke-width="2" opacity="0.4"/>
+    <circle cx="0" cy="0" r="80" fill="none" stroke="url(#gold)" stroke-width="1" opacity="0.2"/>
+    <circle cx="0" cy="0" r="30" fill="none" stroke="url(#gold)" stroke-width="4" class="core-glow"/>
+    <circle cx="0" cy="0" r="16" fill="none" stroke="url(#gold)" stroke-width="1.5" opacity="0.6"/>
+    <circle cx="0" cy="0" r="4" fill="url(#gold)" filter="url(#softGlow)"/>
+
+    <!-- 八角星芒 -->
+    <g stroke="url(#gold)" stroke-width="1" opacity="0.3">
+      <line x1="0" y1="-100" x2="0" y2="-140" />
+      <line x1="0" y1="100" x2="0" y2="140" />
+      <line x1="-100" y1="0" x2="-140" y2="0" />
+      <line x1="100" y1="0" x2="140" y2="0" />
+      <line x1="-70" y1="-70" x2="-100" y2="-100" />
+      <line x1="70" y1="70" x2="100" y2="100" />
+      <line x1="-70" y1="70" x2="-100" y2="100" />
+      <line x1="70" y1="-70" x2="100" y2="-100" />
+    </g>
+    
+    <!-- 方向锚点 -->
+    <g fill="url(#gold)">
+      <polygon points="0,-140 -8,-125 8,-125" class="float" filter="url(#glow)"/>
+      <polygon points="0,140 -8,125 8,125" class="float" filter="url(#glow)"/>
+      <polygon points="-140,0 -125,-8 -125,8" class="float" filter="url(#glow)"/>
+      <polygon points="140,0 125,-8 125,8" class="float" filter="url(#glow)"/>
+    </g>
+  </g>
+
+  <!-- 双拱线 -->
+  <g stroke="url(#gold)" stroke-width="2" opacity="0.8" stroke-linecap="round">
+    <path d="M 180,200 Q 300,160 420,200" fill="none" />
+    <path d="M 200,190 Q 300,155 400,190" fill="none" stroke-width="1" opacity="0.4"/>
+    <path d="M 180,340 Q 300,380 420,340" fill="none" />
+    <path d="M 200,350 Q 300,385 400,350" fill="none" stroke-width="1" opacity="0.4"/>
+  </g>
+
+  <!-- 文字：只保留 MEPHISTO -->
+  <g text-anchor="middle" font-family="'Garamond', 'Trajan Pro', serif">
+    <text x="300" y="485" font-size="24" font-weight="bold" fill="url(#textGold)" letter-spacing="14" filter="url(#textGlow)">MEPHISTO</text>
+  </g>
+
+  <!-- 装饰粒子 -->
+  <g fill="#D1B464" opacity="0.4">
+    <circle cx="140" cy="200" r="1.5"/>
+    <circle cx="460" cy="200" r="1.5"/>
+    <circle cx="120" cy="350" r="1"/>
+    <circle cx="480" cy="350" r="1"/>
+    <circle cx="200" cy="130" r="1"/>
+    <circle cx="400" cy="130" r="1"/>
+  </g>
+</svg>
