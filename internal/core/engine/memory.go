@@ -113,8 +113,9 @@ func ExtractMemories(ctx context.Context, history []domain.HistoryEntry, existin
 	// 构建提取提示词
 	prompt := buildExtractPrompt(recent, existing)
 
-	// 调用 LLM 提取
-	response, err := llmClient.Generate(ctx, prompt)
+	// 调用 LLM 提取（流式输出 + 空回调，记忆管理不需要实时展示）
+	// 与 Flutter 后版的 _callLLM 对齐：统一使用 generateStream
+	response, err := llmClient.GenerateStream(ctx, prompt, func(string) {})
 	if err != nil {
 		return nil, fmt.Errorf("记忆提取失败：%w", err)
 	}
@@ -150,7 +151,8 @@ func CompressMemories(ctx context.Context, memories []string, llmClient llm.Clie
 
 	prompt := buildCompressPrompt(toCompress)
 
-	response, err := llmClient.Generate(ctx, prompt)
+	// 调用 LLM 压缩（流式输出 + 空回调，与 Flutter 后版对齐）
+	response, err := llmClient.GenerateStream(ctx, prompt, func(string) {})
 	if err != nil {
 		return nil, fmt.Errorf("记忆压缩失败：%w", err)
 	}

@@ -49,14 +49,15 @@ func NewOllamaClient(cfg OllamaConfig) *OllamaClient {
 // 参数：
 //   - ctx: 上下文
 //   - prompt: 用户提示
-//   - stream: 是否启用流式
-//   - handler: 处理响应的函数（同步模式解析 JSON，流式模式逐块读取）
-func (c *OllamaClient) request(ctx context.Context, prompt string, stream bool, handler func(resp *http.Response) (string, error)) (string, error) {
+//   - handler: 处理响应的函数（流式模式逐块读取）
+//
+// 只支持流式输出（与 Flutter 后版对齐），请求体固定 stream=true。
+func (c *OllamaClient) request(ctx context.Context, prompt string, handler func(resp *http.Response) (string, error)) (string, error) {
 	// 构建请求体
 	reqBody := map[string]any{
 		"model":  c.config.Model,
 		"prompt": prompt,
-		"stream": stream,
+		"stream": true,
 	}
 
 	// 序列化请求体
@@ -88,22 +89,9 @@ func (c *OllamaClient) request(ctx context.Context, prompt string, stream bool, 
 	return handler(resp)
 }
 
-// Generate 实现同步生成
-func (c *OllamaClient) Generate(ctx context.Context, prompt string) (string, error) {
-	return c.request(ctx, prompt, false, func(resp *http.Response) (string, error) {
-		var result struct {
-			Response string `json:"response"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return "", fmt.Errorf("解析响应失败: %w", err)
-		}
-		return strings.TrimSpace(result.Response), nil
-	})
-}
-
 // GenerateStream 流式生成
 func (c *OllamaClient) GenerateStream(ctx context.Context, prompt string, callback func(chunk string)) (string, error) {
-	return c.request(ctx, prompt, true, func(resp *http.Response) (string, error) {
+	return c.request(ctx, prompt, func(resp *http.Response) (string, error) {
 		var fullResponse strings.Builder
 		scanner := bufio.NewScanner(resp.Body)
 		for scanner.Scan() {

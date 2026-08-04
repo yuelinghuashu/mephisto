@@ -11,11 +11,11 @@
 package engine
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
 	"mephisto/internal/core/llm"
+	"mephisto/internal/domain"
 	"mephisto/internal/shared"
 )
 
@@ -57,10 +57,10 @@ func ExecuteAction(action, input string, runtime *Runtime, llmClient llm.Client,
 	}
 
 	switch {
-	case strings.HasPrefix(action, "注入 "):
+	case strings.HasPrefix(action, actionInjectPrefix):
 		return executeInject(action, runtime)
 
-	case strings.HasPrefix(action, "状态."):
+	case strings.HasPrefix(action, actionStatePrefix):
 		return setState(action, runtime, onChunk)
 
 	default:
@@ -101,7 +101,7 @@ func executeCompoundAction(action, input string, runtime *Runtime, llmClient llm
 
 // executeInject 执行注入动作。
 func executeInject(action string, runtime *Runtime) string {
-	msg := shared.Unquote(strings.TrimPrefix(action, "注入 "))
+	msg := domain.Unquote(strings.TrimPrefix(action, actionInjectPrefix))
 	msg = shared.ReplacePlaceholders(msg, map[string]string{
 		"角色名": runtime.Contract().RoleName,
 	})
@@ -125,7 +125,7 @@ func executeInject(action string, runtime *Runtime) string {
 // 返回值：
 //   - string: 带 📊 前缀的确认消息
 func setState(action string, runtime *Runtime, onChunk func(string)) string {
-	rest := strings.TrimPrefix(action, "状态.")
+	rest := strings.TrimPrefix(action, actionStatePrefix)
 	rest = strings.TrimSpace(rest)
 
 	// 复合赋值运算符（优先级高于简单赋值）
@@ -255,38 +255,9 @@ func setState(action string, runtime *Runtime, onChunk func(string)) string {
 // 返回值：
 //   - string: LLM 生成的响应
 func callLLMInternal(input, instruction string, llmClient llm.Client, runtime *Runtime, onChunk func(string)) string {
-	// 合并用户输入与指令
-	combinedInput := input
-	if instruction != "" && instruction != input {
-		combinedInput = fmt.Sprintf("%s\n（指令：%s）", input, instruction)
-	}
-
-	// 构建 Prompt（使用运行时的记忆，而非契约初始值）
-	prompt := llm.BuildPrompt(
-		runtime.Contract(),
-		runtime.State(),
-		runtime.History(),
-		runtime.Memories(),
-		combinedInput,
-		llm.NarrativeConstraints,
-	)
-
-	ctx := context.Background()
-
-	// 调用 LLM（流式或非流式）
-	if onChunk != nil {
-		resp, err := llmClient.GenerateStream(ctx, prompt, onChunk)
-		if err != nil {
-			return defaultStaticResponse(runtime.Contract().RoleName, onChunk)
-		}
-		return resp
-	}
-
-	resp, err := llmClient.Generate(ctx, prompt)
-	if err != nil {
-		return defaultStaticResponse(runtime.Contract().RoleName, onChunk)
-	}
-	return resp
+	// 委托给公共函数 callLLM（见 llm_helper.go），与 engine.callLLM 共用同一实现。
+	// 使用默认约束 llm.NarrativeConstraints（静态动作的指令注入不携带自定义约束）。
+	return callLLM(input, instruction, runtime, llmClient, llm.NarrativeConstraints, onChunk)
 }
 
 // defaultStaticResponse 生成默认静态响应文本。

@@ -13,9 +13,12 @@ import (
 
 // createLLMClient 根据配置创建对应的 LLM 客户端。
 //
-// 支持的客户端类型：
-//   - deepseek / openai: 使用 OpenAI/DeepSeek API
+// 支持的客户端类型（与 Flutter 版对齐）：
+//   - openai: OpenAI 兼容 API（含 DeepSeek 等一切兼容服务，通过 BaseURL 区分）
 //   - ollama: 使用本地 Ollama 服务
+//
+// 兼容性说明：
+//   - "deepseek" 是 openai 兼容分支的旧别名（默认 BaseURL 指向 DeepSeek），保留以兼容老配置
 //
 // 参数：
 //   - cfg: 应用配置（包含 Client、Model、APIKey、BaseURL、MaxTokens）
@@ -36,7 +39,7 @@ func createLLMClient(cfg *AppConfig) (llm.Client, error) {
 		if displayURL == "" {
 			displayURL = "https://api.deepseek.com/v1"
 		}
-		fmt.Printf("  LLM 后端：%s\n", cfg.Client)
+		fmt.Printf("  LLM 后端：OpenAI 兼容\n")
 		fmt.Printf("  模型：%s\n", cfg.Model)
 		fmt.Printf("  API：%s\n", displayURL)
 		return client, nil
@@ -49,6 +52,6 @@ func createLLMClient(cfg *AppConfig) (llm.Client, error) {
 		return client, nil
 
 	default:
-		return nil, fmt.Errorf("未知的客户端类型：%s（支持：deepseek、openai、ollama）", cfg.Client)
+		return nil, fmt.Errorf("未知的客户端类型：%s（支持：openai、ollama）", cfg.Client)
 	}
 }

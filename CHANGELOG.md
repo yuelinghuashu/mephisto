@@ -5,7 +5,68 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [v1.0.3] — 2026-07-25
+## [v1.1.0] — 2026-08-05
+
+### ⚠️ 破坏性变更
+
+- **废弃单横线长选项**：`-branch` / `-reset` / `-debug` / `-client` / `-model` / `-constraints` / `-max-tokens` 等旧写法不再支持，**长选项必须使用双横线**（如 `--branch`、`--reset`）。单横线 `-` 仅用于单字母短选项（如 `-b`、`-r`、`-d`、`-c`、`-m`、`-o`、`-q`、`-h`、`-v`）。`parseFlexible` 现在严格区分单横线短选项与双横线长选项，使用旧写法会报错并提示正确用法，不再静默兼容，例如：
+  ```bash
+  ❌ 长选项请使用 --branch（单横线 - 仅用于短选项，如 -b）
+  ```
+- **骰子表达式收敛为 `1d2` / `1d100`**：多骰子（如 `2d6`）与其他面数（如 `1d20`、`1d6`）不再支持（与 Flutter 版对齐），使用场景极少以保持逻辑简洁。`roll(1d2)` 用于二元判定（是/否），`roll(1d100)` 用于高精度命运判定
+- **LLM 客户端只保留流式接口**：`Client` 接口移除非流式 `Generate`，仅保留 `GenerateStream`（与 Flutter 版对齐），内部实现强制 `stream=true`
+
+### 🏗️ 核心引擎重构（对齐 Flutter 版）
+
+- **类型化状态值体系**（新 `internal/domain/statevalue.go`）：新增 `StateValue` 密封接口与 `IntValue` / `DoubleValue` / `BoolValue` / `StringValue` 四个实现，解析器在解析 `.meph` 时即推断类型并构造对应子类型，消除引擎运行时的二次类型推断。`StateItem` 序列化格式保持向后兼容（`{"key":"生命值","value":100}`）
+- **条件 AST 编译缓存**（`condition.go`）：条件字符串首次求值时编译为 `CondNode` AST 并缓存在包级 map（`sync.RWMutex` 保护），后续评估直接复用已编译结构，避免每轮对话反复做字符串拆分。缓存设 `conditionCacheMax = 1024` 上限，超过时清空重建（FAV 简单淘汰），防止长期运行的库/服务无界增长。新增**括号分组**支持（`(A || B)`），逻辑运算符只在顶层分割
+- **两阶段规则匹配**（`matcher.go`）：明确划分为「被动规则批量执行」（状态修改 + 注入记忆，多条可同时触发）与「主动规则互斥匹配」（LLM 指令 / 静态文本，只触发第一条）。调试输出 `debugPrint` 改为惰性求值，`debug=false` 时零格式化开销
+- **LLM 调用统一入口**（新 `llm_helper.go`）：提取 `engine.callLLM` 与 `executor.callLLMInternal` 的重复实现，统一为公共 `callLLM` 函数；`buildInstruction` / `hasRoll` 辅助函数集中管理。调用带超时控制（`context.WithTimeout`，默认 60 秒）防止 API 挂起无限等待，失败时通过 `onChunk` 输出 `⚠️ LLM 调用失败（原因，已降级为静态响应）` 警告再降级，避免"角色沉默"被用户误认为剧情设计
+- **规则语法校验器**（新 `internal/core/parser/validator.go`）：解析时提前捕获会导致「静默失效」的语法错误——运算符空格（`+ =`、`> =`）、关键词空格（`不 包含`、`注 入`）、roll 表达式空格/括号缺失/非法面数、条件括号不匹配、复合动作 `&&` 分隔符缺失空格、互斥组缺失 `]`
+- **子版命名规则对齐 Flutter**（`save.go`）：从下划线改为**点分隔**——默认子版 `story.child.meph`、分支子版 `story.dark.meph`；运行子版文件时直接覆盖，不再嵌套生成
+- **运行时深拷贝简化**（`runtime.go`）：`maps.Clone` / `slices.Clone` 替代手动循环拷贝
+- **`shared/convert.go` 精简**：`ParseValue` 委托给 `domain`，消除重复的类型推断逻辑；修复布尔误判（`状态.xxx = 1` 现解析为 `int(1)` 而非 `true`，与 Flutter 一致）
+- **`Contract` 模型调整**：`State` / `Anchor` 使用类型化 `StateItem`（含 `StateValue`），新增 `StateMap()` 便捷转换；`Memories` / `History` 保留在领域模型
+
+### 🚀 新特性
+
+- **参数解析错误提示全面强化**：拼写错误的 flag（`❌ 未知的选项：-clent（使用 'mephisto help' 查看可用选项）`）、非布尔选项缺失参数值（`❌ 选项 --client 缺少参数值`）、`parse` / `run` 缺失 `.meph` 文件、`init` 未知选项与多余参数，均给出明确报错而非静默忽略或晦涩的系统错误
+- **子命令级帮助**：`mephisto run -h` / `parse --help` / `init --help` 会显示全局帮助信息
+- **flag 解析增强**：支持 `-o=xxx`、`--branch=dark` 等 `-flag=value` 内联值格式；所有选项注册长形式 `--output` / `--quiet` 等
+- **新示例契约 `data/dantes.meph`**：基督山伯爵（埃德蒙·唐泰斯）完整契约，展示括号分组、互斥组、骰子判定、状态复合赋值等全部语法特性
+
+### 🔧 重构
+
+- **示例契约调整**：删除 `data/belial.meph`（贝利亚，光之国题材）、`internal/core/integration/testdata/test_contract.meph`，测试数据复用 `parser/testdata/sample.meph`；`data/faust.meph` 规则同步更新
+- **`deepseek` 客户端类型合并入 `openai` 兼容**：`MEPHISTO_CLIENT` 默认值从 `deepseek` 改为 `openai`（与 Flutter 版及 README 对齐）；`deepseek` 保留为 `openai` 兼容分支的历史别名（老配置 `--client deepseek` 完全可用）；帮助/错误信息统一为 `openai/ollama`，消除"deepseek 是独立客户端"的误导
+
+### 🏗️ 底层架构优化
+
+- **Engine 统一契约单一事实源**（`engine.go` / `save.go`）：移除 `Engine.contract` 冗余字段，`Run` / `Save` / `Rules` 统一通过 `runtime.Contract()` 访问同一份契约数据，从架构上消除"引擎持有旧契约、运行时持有新契约"的状态分裂风险（热重载场景）
+- **规则读取线程安全**：新增内部 `rules()` 方法返回规则切片副本，`Run` 每次从 runtime 读取最新规则快照，避免热重载并发替换时主循环持有过期引用
+
+### ♻️ 代码精简
+
+- **删除 4 个死代码函数**（均无生产代码调用）：
+  - `matchRule()`（`matcher.go`）：仅测试使用，测试改用 `matchActiveRule`（签名完全兼容，行为一致）
+  - `AnchorMap()`（`contract.go`）、`StateItemsToMap()`（`convert.go`）：全项目无任何调用
+  - `buildChildContent()`（`save.go`）：仅测试使用，测试改用 `buildChildContentWithRules`
+- **消除薄封装函数**：
+  - `domain.TrimSpace()`：内联为标准库 `strings.TrimSpace`
+  - `shared.Unquote()`：删除，调用方（`executor.go` / `condition.go`）改用 `domain.Unquote`
+- **`config.go` flag 注册去重**：提取 `addStringPair` / `addBoolPair` 辅助函数，合并短/长选项成对注册，消除 `parseParseArgs` / `parseRunArgs` 中 14 个重复注册
+- **魔法数字修复**：`parseRuleLine` 中 `[group:` 前缀的硬编码长度 `7` 改为 `len("[group:")`
+
+### 📝 文档
+
+- **`help.go` 更新**：新增「约定」章节说明 `-<字母>` 短选项与 `--<单词>` 长选项的用法，所有示例统一为 `--` 风格
+- **`README.md` / `README.en.md` 更新**：CLI 选项章节同步更新，补充 `-`/`--` 使用约定与 `MEPHISTO_QUIET` 环境变量
+- **`docs/RULES.md` 更新**：补充括号分组语法说明，调整骰子描述为 `1d2` / `1d100`
+
+---
+
+<details>
+<summary><strong>v1.0.3</strong> — 2026-07-25</summary>
 
 ### 🚀 新特性
 
@@ -23,6 +84,8 @@
 - **`Session` 集成 `fsnotify` 文件监听**：新增 `watchFileChanges()` 后台协程，监听子版文件变更，500ms 防抖避免频繁触发
 - **`Makefile` 完善**：新增 `build`、`run`、`clean` 目标，`make build` 编译，`make run` 编译并运行，`make clean` 清理产物
 - **`help.go` 与 `README` 更新**：子命令列表新增 `init`，交互模式命令集中列出（`/state`、`/history`、`/rules`、`/save`）
+
+</details>
 
 ---
 

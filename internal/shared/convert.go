@@ -6,7 +6,6 @@ package shared
 import (
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"mephisto/internal/domain"
@@ -28,68 +27,33 @@ import (
 //   - 如果值被双引号包裹（如 `"hello"`），自动去除引号
 //   - 空字符串返回空字符串
 func ParseValue(v string) any {
-	// 去除首尾空白
-	v = strings.TrimSpace(v)
-	if v == "" {
-		return ""
-	}
-
-	// 尝试去除引号
-	unquoted := Unquote(v)
-	if unquoted != v {
-		// 有引号，直接作为字符串返回（去除引号后的内容）
-		return unquoted
-	}
-
-	// 检查布尔值
-	if b, err := strconv.ParseBool(v); err == nil {
-		return b
-	}
-
-	// 检查整数
-	if i, err := strconv.Atoi(v); err == nil {
-		return i
-	}
-
-	// 检查浮点数
-	if f, err := strconv.ParseFloat(v, 64); err == nil {
-		return f
-	}
-
-	return v
-}
-
-// Unquote 去除字符串两端的引号（如果存在）。
-func Unquote(s string) string {
-	s = strings.TrimSpace(s)
-	if len(s) >= 2 && ((s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'')) {
-		return s[1 : len(s)-1]
-	}
-	return s
+	// 委托给 domain.ParseStateValue（类型推断规则一致），再解包 Raw()。
+	// 消除了两处重复的类型推断逻辑。
+	//
+	// 行为差异说明：
+	//   domain.ParseStateValue 只将 "true"/"false"/"True"/"TRUE"/"False"/"FALSE"
+	//   视为布尔（与 Flutter 版一致）；而旧的实现用 strconv.ParseBool 会把
+	//   "1"/"0"/"t"/"f" 也当作布尔。统一后 `状态.xxx = 1` 解析为 int(1) 而非 true，
+	//   修复了布尔误判的潜在 bug。
+	return domain.ParseStateValue(v).Raw()
 }
 
 // ============================================================
 // 键值对操作
 // ============================================================
 
-// KeyValuesToMap 将 KeyValue 列表转为 map[string]string。
-func KeyValuesToMap(kvs []domain.KeyValue) map[string]any {
-	m := make(map[string]any, len(kvs))
-	for _, kv := range kvs {
-		m[kv.Key] = ParseValue(kv.Value)
-	}
-	return m
-}
-
-// MapToKeyValues 将 map 转为 KeyValue 列表，按指定键顺序输出。
-func MapToKeyValues(m map[string]any, orderKeys []string) []domain.KeyValue {
-	var kvs []domain.KeyValue
+// MapToStateItems 将 map 转为 StateItem 列表，按指定键顺序输出。
+//
+// map 的值为引擎运行时类型（int/float64/bool/string），
+// 这里通过 domain.FromRaw 恢复为类型化 StateValue。
+func MapToStateItems(m map[string]any, orderKeys []string) []domain.StateItem {
+	var items []domain.StateItem
 	seen := make(map[string]bool)
 
 	// 按指定顺序输出
 	for _, k := range orderKeys {
 		if v, ok := m[k]; ok {
-			kvs = append(kvs, domain.KeyValue{Key: k, Value: fmt.Sprintf("%v", v)})
+			items = append(items, domain.StateItem{Key: k, Value: domain.FromRaw(v)})
 			seen[k] = true
 		}
 	}
@@ -97,11 +61,11 @@ func MapToKeyValues(m map[string]any, orderKeys []string) []domain.KeyValue {
 	// 输出剩余未输出的键
 	for k, v := range m {
 		if !seen[k] {
-			kvs = append(kvs, domain.KeyValue{Key: k, Value: fmt.Sprintf("%v", v)})
+			items = append(items, domain.StateItem{Key: k, Value: domain.FromRaw(v)})
 		}
 	}
 
-	return kvs
+	return items
 }
 
 // ============================================================

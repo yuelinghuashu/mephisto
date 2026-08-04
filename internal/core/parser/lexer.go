@@ -10,15 +10,16 @@
 //  4. 已知区块名被严格限制（白名单），避免拼写错误导致的隐式 bug。
 //  5. 内容行在 lexer 阶段就带上绝对行号，避免 parser 重复计算。
 //
-// 白名单扩展：
+// 草稿宽容策略（对齐 Flutter meph_lexer.dart）：
+//   - 未知区块（如【草稿】【设定集】）同样切分但标记 IsKnown=false。
+//   - 解析层会静默忽略未知区块，方便用户书写备忘/草稿，不会报错。
 //
-//	通过环境变量 MEPHISTO_EXTRA_BLOCKS 可以添加额外的区块名，
-//	多个区块名用逗号分隔。例如：
-//	export MEPHISTO_EXTRA_BLOCKS="自定义区块1,自定义区块2"
+// 已知区块白名单仅包含 9 个标准区块。先前通过环境变量
+// MEPHISTO_EXTRA_BLOCKS 扩展白名单的机制已移除 —— 草稿宽容策略下，
+// 未知区块被自动宽容接受，无需再通过环境变量注册。
 package parser
 
 import (
-	"os"
 	"strings"
 
 	"mephisto/internal/shared"
@@ -43,87 +44,48 @@ type Line struct {
 
 // Block 表示一个切分后的区块（未解析内容）。
 //
-// 区块是 .meph 文件的基本组织单位：
-//
-//	【标题】      ← 标题行（本行不进入 Content）
-//	内容行1      ← 进入 Content[0]
-//	内容行2      ← 进入 Content[1]
-//	【下一个标题】 ← 结束当前区块
-//
-// 与重构前的区别：
-//
-//	重构前 Content 是 string，行号由 parser 计算。
-//	重构后 Content 是 []Line，每行自带绝对行号。
-//
 // 字段说明：
 //
 //	Title   - 区块标题，如 "角色名"、"锚点"。
-//	          由 isBlockTitle 提取并经过白名单校验。
+//	          由 blockTitle 提取（未知区块同样接受，标记 IsKnown=false）。
 //	Content - 区块的内容行列表（不含标题行）。
 //	          每行都带有源文件中的绝对行号。
 //	Line    - 标题行在源文件中的绝对行号（快速参考）。
-//	          等于 Content[0].Number - 1（如果 Content 非空）。
+//	IsKnown - 是否为已知区块（在白名单中）。
+//	          未知区块（如【草稿】【设定集】）同样切分但标记为 false，
+//	          解析层会静默忽略未知区块，方便用户书写备忘/草稿，不会报错。
 type Block struct {
 	Title   string
 	Content []Line
 	Line    int
+	IsKnown bool
 }
 
-// getKnownBlocks 返回已知区块名的白名单。
+// knownBlocks 是已知区块名的静态白名单。
 //
-// 基础白名单包含 10 个标准区块：
+// 基础白名单包含 9 个标准区块：
 //
 //	角色名、锚点、世界观、角色背景、开局场景、状态、规则、记忆、历史
-//
-// 扩展方式：
-//
-//	通过环境变量 MEPHISTO_EXTRA_BLOCKS 添加额外区块名，
-//	多个区块名用逗号分隔（会去除首尾空格）。
-//
-// 为什么使用 map[string]bool 作为白名单？
-//  1. 显式列出所有合法区块名，防止拼写错误导致的隐式 bug。
-//  2. O(1) 查找，性能优异。
-//  3. 环境变量扩展支持自定义区块，无需修改代码。
-func getKnownBlocks() map[string]bool {
-	// 基础白名单
-	base := map[string]bool{
-		"角色名":  true,
-		"锚点":   true,
-		"世界观":  true,
-		"角色背景": true,
-		"开局场景": true,
-		"状态":   true,
-		"规则":   true,
-		"记忆":   true,
-		"历史":   true,
-	}
-
-	// 从环境变量加载额外区块
-	if extra := os.Getenv("MEPHISTO_EXTRA_BLOCKS"); extra != "" {
-		for name := range strings.SplitSeq(extra, ",") {
-			name = strings.TrimSpace(name)
-			if name != "" {
-				base[name] = true
-			}
-		}
-	}
-
-	return base
+var knownBlocks = map[string]bool{
+	"角色名":  true,
+	"锚点":   true,
+	"世界观":  true,
+	"角色背景": true,
+	"开局场景": true,
+	"状态":   true,
+	"规则":   true,
+	"记忆":   true,
+	"历史":   true,
 }
 
 // isKnownBlock 检查区块名是否在白名单中。
-//
-// 每次调用都会重新读取环境变量，支持运行时动态调整。
-// 如果性能敏感，可以缓存结果，但考虑到 Lex 只执行一次，当前实现足够。
 func isKnownBlock(name string) bool {
-	return getKnownBlocks()[name]
+	return knownBlocks[name]
 }
 
 // Lex 将 .meph 文本切分为区块列表。
 //
 // 这是解析流程的第一阶段（词法分析 / 区块切分）。
-// 输入是 .meph 文件的完整文本内容（UTF-8 编码的字符串），
-// 输出是区块列表 []Block，以及可能的错误。
 //
 // 处理逻辑（按行扫描状态机）：
 //
@@ -136,7 +98,7 @@ func isKnownBlock(name string) bool {
 //	2. 当前行是区块标题（【xxx】）：
 //	   - 如果 inBlock == true：先保存当前区块
 //	   - 开始新区块：记录标题、清空内容缓存、inBlock = true
-//	   - 继续下一行
+//	   - 未知区块同样接受，标记 IsKnown=false（草稿宽容策略）
 //
 //	3. 当前行不是标题（普通内容行）：
 //	   - 如果 inBlock == false：报错（内容出现在任何区块之外）
@@ -146,11 +108,9 @@ func isKnownBlock(name string) bool {
 //	   - 如果 inBlock == true，保存最后一个区块
 //	   - 检查是否至少有一个区块，没有则报错
 //
-// 为什么在 lexer 阶段就记录行号？
-//
-//	lexer 在扫描时直接记录绝对行号，parser 拿到 Line 后
-//	直接使用 Line.Number 报告错误，无需任何计算。
-//	这避免了 parser 维护复杂的迭代器状态。
+// 草稿宽容策略（对齐 Flutter meph_lexer.dart）：
+//   - 未知区块（如【草稿】【设定集】）同样切分但标记 IsKnown=false。
+//   - 解析层会静默忽略未知区块，方便用户书写备忘/草稿，不会报错。
 //
 // 空行和注释的处理策略：
 //
@@ -164,13 +124,6 @@ func isKnownBlock(name string) bool {
 //   - 最后一个区块后有注释 → 跳过，不影响
 //   - 标题行后立即跟下一个标题 → 第一个区块的 Content 为空（合法）
 //   - 文件中没有任何区块 → 报错 "没有有效区块"
-//
-// 参数：
-//   - text: .meph 文件的完整文本内容
-//
-// 返回值：
-//   - []Block: 切分后的区块列表
-//   - error: 解析错误（包含行号和错误描述）
 func Lex(text string) ([]Block, error) {
 	lines := strings.Split(text, "\n")
 
@@ -199,15 +152,15 @@ func Lex(text string) ([]Block, error) {
 
 		// ---- 检查是否为区块标题 ----
 		//
-		// 标题格式：【标题名】
-		// 标题名必须通过白名单校验（isKnownBlock），防止拼写错误
-		if title, ok := isBlockTitle(line); ok {
+		// 标题格式：【标题名】（未知区块同样接受，标记 IsKnown=false）
+		if title, ok := blockTitle(trimmed); ok {
 			// 如果已经在某个区块中，先保存旧区块
 			if inBlock {
 				blocks = append(blocks, Block{
 					Title:   currentBlockTitle,
 					Content: currentBlockContent,
 					Line:    currentBlockLine,
+					IsKnown: isKnownBlock(currentBlockTitle),
 				})
 			}
 
@@ -253,6 +206,7 @@ func Lex(text string) ([]Block, error) {
 			Title:   currentBlockTitle,
 			Content: currentBlockContent,
 			Line:    currentBlockLine,
+			IsKnown: isKnownBlock(currentBlockTitle),
 		})
 	}
 
@@ -266,22 +220,19 @@ func Lex(text string) ([]Block, error) {
 	return blocks, nil
 }
 
-// isBlockTitle 检查一行是否为有效的区块标题。
+// blockTitle 检查一行是否为区块标题（【标题】 格式）。
 //
 // 输入：一行原始文本（可能包含首尾空白）
 // 输出：区块标题（如 "角色名"）和一个布尔值表示是否匹配。
 //
-// 校验规则（必须同时满足）：
+// 校验规则：
 //  1. 去除首尾空白后，必须以 【 开头，以 】 结尾。
 //  2. 提取 【 和 】 之间的内容，去除首尾空白。
 //  3. 标题不能为空字符串。
-//  4. 标题必须在白名单中（基础 + 环境变量扩展）。
 //
-// 为什么同时检查格式和白名单？
-//   - 格式检查（【】）确保标题行的基本形态正确。
-//   - 白名单检查确保标题是预定义的合法值。
-//   - 两者结合，既避免了"伪标题"被误判，也避免了拼写错误。
-func isBlockTitle(line string) (string, bool) {
+// 与 Flutter meph_lexer.dart 的 blockTitle 对齐：
+// 不要求标题在白名单中，未知区块作为草稿宽容接受（IsKnown=false 供解析层判断）。
+func blockTitle(line string) (string, bool) {
 	trimmed := strings.TrimSpace(line)
 
 	// 必须以 【 开头，以 】 结尾
@@ -295,11 +246,6 @@ func isBlockTitle(line string) (string, bool) {
 	title = strings.TrimSpace(title)
 
 	if title == "" {
-		return "", false
-	}
-
-	// 必须在白名单中（基础 + 环境变量扩展）
-	if !isKnownBlock(title) {
 		return "", false
 	}
 

@@ -95,13 +95,13 @@ func splitKeyValue(s string) (string, string, bool) {
 //   - 键：值
 //
 // 空行和以 # 开头的行会被忽略。
-func parseKeyValue(lines []Line, blockName string) ([]domain.KeyValue, error) {
+func parseKeyValue(lines []Line, blockName string) ([]domain.StateItem, error) {
 	entries, err := scanEntries(lines, blockName)
 	if err != nil {
 		return nil, err
 	}
 
-	var result []domain.KeyValue
+	var result []domain.StateItem
 	for _, entry := range entries {
 		// 检查行内 #（键值对中不允许包含裸露的 # 符号）
 		if strings.Contains(entry.Raw, "#") {
@@ -127,7 +127,7 @@ func parseKeyValue(lines []Line, blockName string) ([]domain.KeyValue, error) {
 				Message:   "键不能为空",
 			}
 		}
-		result = append(result, domain.KeyValue{Key: key, Value: value})
+		result = append(result, domain.StateItem{Key: key, Value: domain.ParseStateValue(value)})
 	}
 	return result, nil
 }
@@ -302,14 +302,28 @@ func parseRuleLine(line string, lineNumber int, blockName string) (*domain.Rule,
 		}
 	}
 
-	// 提取互斥组（可选）
+	// 互斥组（可选）：动作以 [group:组名] 开头时剥离
+	// 缺少闭合的 "]" 时剥离异常，静默导致组名解析错误，必须尽早报错
 	group := ""
-	if strings.HasPrefix(action, "[group:") {
+	if strings.Contains(action, "[group:") && !strings.Contains(action, "]") {
+		return nil, &shared.ParseError{
+			Line:      lineNumber,
+			BlockName: blockName,
+			Message:   "互斥组应写为 [group:组名]（缺少闭合的 \"]\"）",
+		}
+	}
+	groupPrefix := "[group:"
+	if strings.HasPrefix(action, groupPrefix) {
 		endIndex := strings.Index(action, "]")
 		if endIndex != -1 {
-			group = action[7:endIndex]
+			group = action[len(groupPrefix):endIndex]
 			action = strings.TrimSpace(action[endIndex+1:])
 		}
+	}
+
+	// 校验规则语法（运算符空格、关键词空格、roll 格式、括号匹配、&& 分隔符）
+	if err := validateRuleSyntax(cond, action, lineNumber, blockName); err != nil {
+		return nil, err
 	}
 
 	return &domain.Rule{
@@ -381,7 +395,7 @@ func parseHistory(lines []Line, blockName string) ([]domain.HistoryEntry, error)
 //	未知标题（由于 isKnownBlock 已过滤，理论上不会出现）被静默忽略。
 func parseBlocks(blocks []Block) (*domain.Contract, error) {
 	contract := &domain.Contract{
-		State: []domain.KeyValue{},
+		State: []domain.StateItem{},
 		// 其他切片类型统一为 nil（序列化时会被 omitempty 忽略）
 	}
 
@@ -442,9 +456,9 @@ func parseBlocks(blocks []Block) (*domain.Contract, error) {
 			}
 			contract.History = value
 		default:
-			// 自定义区块：静默忽略（相当于注释区块）
-			// 这些区块通过 MEPHISTO_EXTRA_BLOCKS 环境变量定义，
-			// 被 Lexer 识别为合法区块，但不产生任何数据。
+			// 自定义区块：静默忽略（草稿宽容策略）
+			// 未知区块（如【草稿】【设定集】）被 Lexer 切分但标记 IsKnown=false，
+			// 这里直接跳过不产生任何数据，方便用户书写备忘/草稿。
 			continue
 		}
 	}

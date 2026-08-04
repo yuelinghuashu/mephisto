@@ -13,6 +13,10 @@ import (
 
 // runParse 执行解析命令。
 func runParse(cfg *AppConfig) error {
+	if cfg.File == "" {
+		return fmt.Errorf("缺少 .meph 文件参数（用法：mephisto parse [选项] <文件>）")
+	}
+
 	contract, err := parser.ParseFile(cfg.File)
 	if err != nil {
 		return err
@@ -28,6 +32,10 @@ func runParse(cfg *AppConfig) error {
 
 // runInteractive 启动交互式对话模式。
 func runInteractive(cfg *AppConfig) error {
+	if cfg.File == "" {
+		return fmt.Errorf("缺少 .meph 文件参数（用法：mephisto run [选项] <文件>）")
+	}
+
 	contract, err := parser.ParseFile(cfg.File)
 	if err != nil {
 		return err

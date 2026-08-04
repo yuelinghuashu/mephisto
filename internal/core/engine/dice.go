@@ -5,6 +5,9 @@
 // 设计原则：
 //   - RollStore 确保条件判定与叙事信息使用同一骰值
 //   - evalRoll 和 extractRollInfo 共享 RollStore 中的骰值
+//   - 只支持单骰子（1dN）：1d2（二元判定）与 1d100（高精度判定）
+//
+// 多骰子（如 2d6）使用场景极少，已移除以保持逻辑简洁（对齐 Flutter 版）。
 package engine
 
 import (
@@ -15,16 +18,33 @@ import (
 )
 
 // ============================================================
+// 共享常量
+// ============================================================
+
+// comparisonOperators 比较运算符（按优先级从长到短排列）。
+// 被 evalCondition、evalRoll 和 parseRollExpr 共用，消除重复定义。
+var comparisonOperators = []string{">=", "<=", "!=", "==", ">", "<"}
+
+// rollPrefix 是 roll 表达式的前缀。
+const rollPrefix = "roll("
+
+// ============================================================
+// 动作前缀常量（对齐 Flutter 的 RuleAction 类）
+// ============================================================
+
+const (
+	// actionInjectPrefix 注入动作前缀（`注入 "..."` → 追加到记忆）
+	actionInjectPrefix = "注入 "
+	// actionStatePrefix 状态修改动作前缀（`状态.键 = 值` → 更新状态）
+	actionStatePrefix = "状态."
+)
+
+// ============================================================
 // RollStore：骰子结果存储，确保条件判定与叙事信息使用同一骰值
 // ============================================================
 
 // RollStore 存储一次规则匹配中所有 roll 表达式的结果。
-// key 是 roll 表达式原文（如 "roll(1d100)"），value 是骰子点数总和。
-//
-// 设计意图：
-//   - evalCondition 中的 evalRoll 从此处获取骰值进行判定
-//   - extractRollInfo 从此处获取骰值生成叙事信息
-//   - 两者使用同一骰值，消除结果不一致的问题
+// key 是 roll 表达式原文（如 "roll(1d100)"），value 是骰子点数。
 type RollStore struct {
 	values map[string]int
 }
@@ -39,12 +59,8 @@ func (rs *RollStore) Roll(expr string) int {
 	if v, ok := rs.values[expr]; ok {
 		return v
 	}
-	// 解析并掷骰
-	count, sides := parseRollExprComponents(expr)
-	total := 0
-	for range count {
-		total += rand.IntN(sides) + 1
-	}
+	sides := parseRollSides(expr)
+	total := rand.IntN(sides) + 1
 	rs.values[expr] = total
 	return total
 }
@@ -54,21 +70,100 @@ func (rs *RollStore) Get(expr string) int {
 	return rs.values[expr]
 }
 
-// parseRollExprComponents 从 "roll(1d100)" 中解析出 count 和 sides。
-func parseRollExprComponents(expr string) (count, sides int) {
-	// 去掉 roll( 和尾部括号
-	inner := strings.TrimPrefix(expr, "roll(")
-	inner = strings.TrimSuffix(inner, ")")
+// parseRollSides 从 "roll(1d100)" 中解析骰子面数。
+//
+// 只接受 "roll(1d2)" 与 "roll(1d100)"（与解析器的一致硬限制）：
+//   - 1d2：二元判定（是/否、成功/失败）
+//   - 1d100：高精度命运判定（1-100）
+//
+// 其他面数或非法格式返回 0（调用方做无效判断）。
+func parseRollSides(expr string) int {
+	inner := expr
+	if strings.HasPrefix(inner, rollPrefix) {
+		inner = strings.TrimPrefix(inner, rollPrefix)
+		inner = strings.TrimSuffix(inner, ")")
+	}
 	parts := strings.Split(inner, "d")
 	if len(parts) != 2 {
-		return 0, 0
+		return 0
 	}
-	count, _ = strconv.Atoi(strings.TrimSpace(parts[0]))
-	sides, _ = strconv.Atoi(strings.TrimSpace(parts[1]))
-	if count <= 0 || sides <= 0 {
-		return 0, 0
+	sides, _ := strconv.Atoi(strings.TrimSpace(parts[1]))
+	// 硬限制：仅 2（1d2 二元判定）与 100（1d100 高精度判定）合法
+	if sides != 2 && sides != 100 {
+		return 0
 	}
-	return count, sides
+	return sides
+}
+
+// ============================================================
+// 骰子表达式解析（evalRoll / parseRollExpr 共用）
+// ============================================================
+
+// rollExpr 解析后的骰子表达式。
+type rollExpr struct {
+	Raw           string // 原始完整条件，如 "roll(1d100) >= 80"
+	RollCore      string // roll(...) 核心部分，如 "roll(1d100)"
+	Sides         int    // 骰子面数（如 100）
+	Op            string // 用户阈值操作符（空表示使用默认阈值）
+	UserThreshold int    // 用户阈值（仅在 Op 非空时有效）
+}
+
+// maxValue 返回骰子的最大值（即面数）。
+func (re rollExpr) maxValue() int {
+	return re.Sides
+}
+
+// thresholdDesc 返回阈值描述文本，如 "阈值 ≥80" 或空字符串。
+func (re rollExpr) thresholdDesc() string {
+	if re.Op == "" {
+		return ""
+	}
+	return fmt.Sprintf("阈值 %s%d", re.Op, re.UserThreshold)
+}
+
+// parseRollExpr 解析条件中的 roll 表达式。
+//
+// 返回的 rollExpr 中 Sides 已通过 parseRollSides 硬校验（仅 1d2/1d100）。
+func parseRollExpr(cond string) (rollExpr, bool) {
+	cond = strings.TrimSpace(cond)
+	if !strings.HasPrefix(cond, rollPrefix) {
+		return rollExpr{}, false
+	}
+
+	endExpr := strings.Index(cond, ")")
+	if endExpr == -1 || endExpr < len(rollPrefix) {
+		// endExpr 必须 >= len("roll(") 即 5，保证 roll() 内至少有一个字符
+		return rollExpr{}, false
+	}
+
+	rollCore := cond[:endExpr+1]
+	sides := parseRollSides(rollCore)
+	if sides == 0 {
+		return rollExpr{}, false
+	}
+
+	re := rollExpr{
+		Raw:      cond,
+		RollCore: rollCore,
+		Sides:    sides,
+	}
+
+	// 解析自定义阈值（可选）
+	rest := strings.TrimSpace(cond[endExpr+1:])
+	if rest != "" {
+		for _, o := range comparisonOperators {
+			if strings.HasPrefix(rest, o) {
+				valStr := strings.TrimSpace(rest[len(o):])
+				if val, err := strconv.Atoi(valStr); err == nil {
+					re.Op = o
+					re.UserThreshold = val
+				}
+				break
+			}
+		}
+	}
+
+	return re, true
 }
 
 // ============================================================
@@ -85,10 +180,9 @@ func parseRollExprComponents(expr string) (count, sides int) {
 //   - roll(1d100) < 30     → 掷一个 100 面骰，结果 < 30 返回 true
 //   - roll(1d100) == 50    → 掷一个 100 面骰，结果 == 50 返回 true
 //   - roll(1d100) != 50    → 掷一个 100 面骰，结果 != 50 返回 true
-//   - roll(2d6)            → 掷两个 6 面骰，结果 >= 默认阈值返回 true
 //
-// 默认阈值规则：掷点结果 >= (面数 * 骰子数 / 2)，即中间值（0.5 成功率）
-// 例如 1d100 默认阈值 = 50，2d6 默认阈值 = 7
+// 默认阈值规则：掷点结果 >= (面数 / 2)，即中间值（0.5 成功率）
+// 例如 1d100 默认阈值 = 50，1d2 默认阈值 = 1
 //
 // 参数：
 //   - cond: 完整条件字符串，如 "roll(1d100)" 或 "roll(1d100) >= 80"
@@ -96,100 +190,49 @@ func parseRollExprComponents(expr string) (count, sides int) {
 //
 // 返回值：
 //   - bool: 掷点结果是否满足条件
-//   - int: 实际骰子点数总和（用于传递给 LLM 作为叙事参考）
+//   - int: 实际骰子点数（用于传递给 LLM 作为叙事参考）
 //
 // 设计说明：
 //   如果提供了 RollStore，骰值将从 RollStore 获取/缓存，
 //   确保条件判定与叙事信息（extractRollInfo）使用同一骰值。
 func evalRoll(cond string, rs *RollStore) (bool, int) {
-	cond = strings.TrimSpace(cond)
-
-	// 确保以 roll( 开头
-	if !strings.HasPrefix(cond, "roll(") {
+	re, ok := parseRollExpr(cond)
+	if !ok {
 		return false, 0
 	}
 
-	// 找 roll(...) 的闭合括号
-	endExpr := strings.Index(cond, ")")
-	if endExpr == -1 || endExpr < 5 {
-		return false, 0
-	}
-
-	// 提取 roll(...) 括号内的表达式
-	start := 5 // len("roll(")
-	expr := strings.TrimSpace(cond[start:endExpr])
-
-	// 解析格式：{count}d{sides}
-	parts := strings.Split(expr, "d")
-	if len(parts) != 2 {
-		return false, 0
-	}
-	count, err := strconv.Atoi(strings.TrimSpace(parts[0]))
-	if err != nil || count <= 0 {
-		return false, 0
-	}
-	sides, err := strconv.Atoi(strings.TrimSpace(parts[1]))
-	if err != nil || sides <= 0 {
-		return false, 0
-	}
-
-	// 从 RollStore 获取或掷骰子
-	rollCore := cond[:endExpr+1] // 如 "roll(1d100)"
+	sides := re.Sides
+	// 从 RollStore 获取或掷骰
 	var total int
 	if rs != nil {
-		total = rs.Roll(rollCore)
+		total = rs.Roll(re.RollCore)
 	} else {
-		for range count {
-			total += rand.IntN(sides) + 1 // 1 ~ sides
-		}
+		total = rand.IntN(sides) + 1 // 1 ~ sides
 	}
 
-	// 解析自定义阈值（可选）
-	// 格式：)... 操作符 数字
-	rest := strings.TrimSpace(cond[endExpr+1:])
-	var op string
-	var thresholdVal int
-	useCustomThreshold := false
-
-	if rest != "" {
-		ops := []string{">=", "<=", "!=", "==", ">", "<"}
-		for _, o := range ops {
-			if strings.HasPrefix(rest, o) {
-				op = o
-				valStr := strings.TrimSpace(rest[len(o):])
-				val, err := strconv.Atoi(valStr)
-				if err == nil {
-					thresholdVal = val
-					useCustomThreshold = true
-				}
-				break
-			}
-		}
-	}
-
-	// 判定
-	if useCustomThreshold {
-		switch op {
+	// 自定义阈值判定
+	if re.Op != "" {
+		switch re.Op {
 		case ">=":
-			return total >= thresholdVal, total
+			return total >= re.UserThreshold, total
 		case ">":
-			return total > thresholdVal, total
+			return total > re.UserThreshold, total
 		case "<=":
-			return total <= thresholdVal, total
+			return total <= re.UserThreshold, total
 		case "<":
-			return total < thresholdVal, total
+			return total < re.UserThreshold, total
 		case "==":
-			return total == thresholdVal, total
+			return total == re.UserThreshold, total
 		case "!=":
-			return total != thresholdVal, total
+			return total != re.UserThreshold, total
 		default:
 			return false, total
 		}
 	}
 
 	// 无自定义阈值：使用默认 50% 判定
-	threshold := (count * sides) / 2
-	if count*sides%2 != 0 {
+	threshold := sides / 2
+	if sides%2 != 0 {
 		threshold++ // 奇数时向上取整
 	}
 
@@ -197,86 +240,8 @@ func evalRoll(cond string, rs *RollStore) (bool, int) {
 }
 
 // ============================================================
-// 骰子表达式解析与叙事信息
+// 骰子表达式叙事信息提取
 // ============================================================
-
-// rollExpr 解析 roll(...) 表达式，提取参数和可选的用户阈值。
-type rollExpr struct {
-	Raw           string // 原始完整条件，如 "roll(1d100) >= 80"
-	RollCore      string // roll(...) 核心部分，如 "roll(1d100)"
-	Count         int
-	Sides         int
-	Op            string // 用户阈值操作符（空表示使用默认阈值）
-	UserThreshold int    // 用户阈值（仅在 Op 非空时有效）
-}
-
-// parseRollExpr 解析条件中的 roll 表达式。
-func parseRollExpr(cond string) (rollExpr, bool) {
-	cond = strings.TrimSpace(cond)
-	if !strings.HasPrefix(cond, "roll(") {
-		return rollExpr{}, false
-	}
-
-	endExpr := strings.Index(cond, ")")
-	if endExpr == -1 || endExpr < 5 {
-		return rollExpr{}, false
-	}
-
-	rollCore := cond[:endExpr+1]
-	expr := strings.TrimSpace(cond[5:endExpr])
-
-	parts := strings.Split(expr, "d")
-	if len(parts) != 2 {
-		return rollExpr{}, false
-	}
-	count, err := strconv.Atoi(strings.TrimSpace(parts[0]))
-	if err != nil || count <= 0 {
-		return rollExpr{}, false
-	}
-	sides, err := strconv.Atoi(strings.TrimSpace(parts[1]))
-	if err != nil || sides <= 0 {
-		return rollExpr{}, false
-	}
-
-	re := rollExpr{
-		Raw:      cond,
-		RollCore: rollCore,
-		Count:    count,
-		Sides:    sides,
-	}
-
-	// 解析自定义阈值
-	rest := strings.TrimSpace(cond[endExpr+1:])
-	if rest != "" {
-		ops := []string{">=", "<=", "!=", "==", ">", "<"}
-		for _, o := range ops {
-			if strings.HasPrefix(rest, o) {
-				valStr := strings.TrimSpace(rest[len(o):])
-				val, err := strconv.Atoi(valStr)
-				if err == nil {
-					re.Op = o
-					re.UserThreshold = val
-				}
-				break
-			}
-		}
-	}
-
-	return re, true
-}
-
-// maxValue 返回骰子的最大值（count * sides）。
-func (re rollExpr) maxValue() int {
-	return re.Count * re.Sides
-}
-
-// thresholdDesc 返回阈值描述文本，如 "阈值 ≥80" 或空字符串。
-func (re rollExpr) thresholdDesc() string {
-	if re.Op == "" {
-		return ""
-	}
-	return fmt.Sprintf("阈值 %s%d", re.Op, re.UserThreshold)
-}
 
 // extractRollInfo 从条件字符串中提取所有 roll(...) 表达式的计算结果。
 //
@@ -286,8 +251,8 @@ func (re rollExpr) thresholdDesc() string {
 //
 // 输出格式示例（单行）：
 //
-//	[战斗判定] roll(1d100) = 87/100（阈值 ≥80）✅
-//	[突然暴怒] roll(1d100) = 97/100 ✅
+//	[战斗判定] roll(1d100) = 87/100（阈值 ≥80）✦
+//	[突然暴怒] roll(1d100) = 97/100 ╳
 //
 // 参数：
 //   - ruleName: 规则名
@@ -303,7 +268,7 @@ func extractRollInfo(ruleName, cond string, rs *RollStore) string {
 	nextRuleName := ruleName
 
 	for {
-		idx := strings.Index(remaining, "roll(")
+		idx := strings.Index(remaining, rollPrefix)
 		if idx == -1 {
 			break
 		}
@@ -312,7 +277,7 @@ func extractRollInfo(ruleName, cond string, rs *RollStore) string {
 		re, ok := parseRollExpr(substr)
 		if !ok {
 			// 解析失败，跳过已处理的 roll( 前缀
-			remaining = remaining[idx+5:]
+			remaining = remaining[idx+len(rollPrefix):]
 			continue
 		}
 
@@ -323,16 +288,14 @@ func extractRollInfo(ruleName, cond string, rs *RollStore) string {
 		}
 		// 如果 rs 为 nil 或没有值，独立掷骰（兼容旧逻辑，但不推荐）
 		if total == 0 && rs == nil {
-			for range re.Count {
-				total += rand.IntN(re.Sides) + 1
-			}
+			total = rand.IntN(re.Sides) + 1
 		}
 
-		// 用同一 RollStore 判定该 roll 表达式是否成功，加上 ✅/❌
+		// 用同一 RollStore 判定该 roll 表达式是否成功，加上 ✦/╳（对齐 Flutter displayString）
 		matched, _ := evalRoll(re.Raw, rs)
-		statusIcon := "❌"
+		statusIcon := "╳"
 		if matched {
-			statusIcon = "✅"
+			statusIcon = "✦"
 		}
 
 		desc := fmt.Sprintf("%s = %d/%d", re.RollCore, total, re.maxValue())
@@ -342,7 +305,6 @@ func extractRollInfo(ruleName, cond string, rs *RollStore) string {
 		// 每个结果带上规则名和成功/失败图标
 		parts = append(parts, fmt.Sprintf("[%s] %s %s", nextRuleName, desc, statusIcon))
 
-		// 检查 roll 之后是否紧跟着操作符和刻度，或者是另一个 roll（复合条件）
 		// 移除已解析的部分
 		remaining = remaining[idx+len(re.RollCore):]
 

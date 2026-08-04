@@ -1,6 +1,6 @@
 // cmd/mephisto/init.go
 //
-// mephisto --init 命令：生成示例契约文件
+// mephisto init 命令：生成示例契约文件
 package main
 
 import (
@@ -12,20 +12,21 @@ import (
 // runInit 生成示例契约文件。
 //
 // 用法：
-//   mephisto --init           → 生成 sample.meph
-//   mephisto --init faust     → 生成 faust.meph
+//   mephisto init faust     → 生成 faust.meph
+//   mephisto init dantes    → 生成 dantes.meph
+//   mephisto init           → 生成 faust.meph（默认）
 func runInit(template string) error {
 	name := template
 	if name == "" {
-		name = "sample"
+		name = "faust"
 	}
 
-	if name != "sample" && name != "faust" {
-		return fmt.Errorf("未知的模板：%s（支持：faust）", name)
+	if name != "faust" && name != "dantes" {
+		return fmt.Errorf("未知的模板：%s（支持：faust、dantes）", name)
 	}
 
-	// 读取 data/faust.meph 模板
-	data, err := os.ReadFile("data/faust.meph")
+	// 读取 data/<模板名>.meph 模板
+	data, err := os.ReadFile("data/" + name + ".meph")
 	if err != nil {
 		return fmt.Errorf("读取模板失败：%w", err)
 	}

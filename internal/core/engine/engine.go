@@ -24,7 +24,7 @@
 //	    fmt.Print(chunk)
 //	})
 //
-//	eng.Save("story.meph", "dark")  // 保存到 story_dark.meph
+//	eng.Save("story.meph", "dark")  // 保存到 story.dark.meph
 package engine
 
 import (
@@ -44,18 +44,21 @@ import (
 
 // Engine 是叙事引擎的统一入口。
 //
-// 它组合 Runtime（状态管理）+ rules（规则/动作）+ memory（记忆），
+// 它组合 Runtime（状态管理 + 契约数据）+ rules（规则/动作）+ memory（记忆），
 // 通过 Run() 方法提供完整的叙事流程。
+//
+// 单一事实源（Single Source of Truth）：
+//   Engine 不直接持有 Contract，统一通过 runtime.Contract() 访问。
+//   这保证热重载（ReloadContract）后，Run、Save、Rules 都读取到同一份最新数据，
+//   避免"引擎持有旧契约、运行时持有新契约"的状态分裂。
 //
 // 字段说明：
 //   - runtime   : 运行时状态管理（含读写锁）
-//   - contract  : 契约数据（只读）
 //   - llmClient : LLM 客户端（可选）
 //   - debug     : 是否启用调试模式
 //   - memoryCfg : 记忆管理配置
 type Engine struct {
 	runtime     *Runtime
-	contract    *domain.Contract
 	llmClient   llm.Client
 	debug       bool
 	memoryCfg   MemoryConfig
@@ -121,7 +124,6 @@ func WithMaxHistory(n int) Option {
 //	)
 func New(contract *domain.Contract, opts ...Option) *Engine {
 	e := &Engine{
-		contract:    contract,
 		runtime:     NewRuntime(contract, 20),
 		debug:       false,
 		memoryCfg:   DefaultMemoryConfig,
@@ -186,12 +188,14 @@ func (e *Engine) Run(input string, onChunk func(string)) (string, error) {
 	// 2. 两阶段规则匹配
 	// 阶段一：批量执行所有被动规则（状态修改 + 注入记忆）
 	// 被动规则产生副作用但不直接输出，所有匹配的都执行
-	passiveMatched, passiveRollInfo := matchPassiveRules(e.contract.Rules, input, runtime, e.debug)
+	// 从 runtime 读取规则副本（热重载后可读到最新规则）
+	rules := e.rules()
+	passiveMatched, passiveRollInfo := matchPassiveRules(rules, input, runtime, e.debug)
 
 	// 阶段二：互斥匹配主动规则（LLM 指令/静态文本）
 	// 主动规则产生直接输出，只执行第一个匹配的
 	state := runtime.State()
-	rule, activeMatched, activeRollInfo := matchActiveRule(e.contract.Rules, input, state, e.debug)
+	rule, activeMatched, activeRollInfo := matchActiveRule(rules, input, state, e.debug)
 
 	// 合并 roll 信息（每行一个）
 	var rollInfo string
@@ -216,11 +220,7 @@ func (e *Engine) Run(input string, onChunk func(string)) (string, error) {
 
 		// 注入动作无输出，继续 LLM
 		if response == "" {
-			instruction := "继续推进剧情"
-			if rollInfo != "" {
-				instruction = fmt.Sprintf("继续推进剧情（%s）", rollInfo)
-			}
-			response = e.callLLM(input, instruction, onChunk)
+			response = e.callLLM(input, buildInstruction(rollInfo), onChunk)
 		}
 	} else if !passiveMatched {
 		// 3b. 没有匹配任何规则（被动 + 主动都没有），自由叙事
@@ -228,11 +228,7 @@ func (e *Engine) Run(input string, onChunk func(string)) (string, error) {
 	} else {
 		// 3c. 仅被动规则匹配，无主动规则匹配
 		// 被动规则只产生副作用不输出，需要 LLM 继续叙事
-		instruction := "继续推进剧情"
-		if rollInfo != "" {
-			instruction = fmt.Sprintf("继续推进剧情（%s）", rollInfo)
-		}
-		response = e.callLLM(input, instruction, onChunk)
+		response = e.callLLM(input, buildInstruction(rollInfo), onChunk)
 	}
 
 	// 4. 记录角色响应
@@ -259,47 +255,7 @@ func (e *Engine) Run(input string, onChunk func(string)) (string, error) {
 //   - 支持流式和非流式两种调用方式
 //   - 如果 LLM 客户端未注入，自动降级为静态响应
 func (e *Engine) callLLM(input, instruction string, onChunk func(string)) string {
-	if e.llmClient == nil {
-		return e.defaultResponse(onChunk)
-	}
-
-	// 合并用户输入与指令
-	combinedInput := input
-	if instruction != "" && instruction != input {
-		combinedInput = fmt.Sprintf("%s\n（指令：%s）", input, instruction)
-	}
-
-	// 构建 Prompt（使用运行时的记忆，而非契约初始值）
-	prompt := llm.BuildPrompt(
-		e.runtime.Contract(),
-		e.runtime.State(),
-		e.runtime.History(),
-		e.runtime.Memories(),
-		combinedInput,
-		e.constraints,
-	)
-
-	ctx := context.Background()
-
-	// 调用 LLM（流式或非流式）
-	if onChunk != nil {
-		resp, err := e.llmClient.GenerateStream(ctx, prompt, onChunk)
-		if err != nil {
-			return e.defaultResponse(onChunk)
-		}
-		return resp
-	}
-
-	resp, err := e.llmClient.Generate(ctx, prompt)
-	if err != nil {
-		return e.defaultResponse(onChunk)
-	}
-	return resp
-}
-
-// defaultResponse 默认静态响应（无 LLM 或无规则匹配时使用）。
-func (e *Engine) defaultResponse(onChunk func(string)) string {
-	return defaultStaticResponse(e.contract.RoleName, onChunk)
+	return callLLM(input, instruction, e.runtime, e.llmClient, e.constraints, onChunk)
 }
 
 // processMemories 处理记忆提取和压缩。
@@ -355,13 +311,25 @@ func (e *Engine) Memories() []string {
 }
 
 // Contract 返回契约（只读）。
+//
+// 注意：返回的是内部指针，调用方不得修改其字段。
+// 规则列表的修改请通过 ReloadContract 完成。
 func (e *Engine) Contract() *domain.Contract {
 	return e.runtime.Contract()
 }
 
-// Rules 返回当前规则列表的副本（只读）。
+// Rules 返回当前规则列表的副本（只读，线程安全）。
+//
+// 热重载会替换内部规则切片，这里复制一份副本避免调用方
+// 持有过期引用或意外修改内部状态。
 func (e *Engine) Rules() []*domain.Rule {
-	return e.runtime.Contract().Rules
+	return e.rules()
+}
+
+// rules 返回当前规则列表的副本（线程安全），供引擎内部使用。
+func (e *Engine) rules() []*domain.Rule {
+	rules := e.runtime.Contract().Rules
+	return append([]*domain.Rule{}, rules...)
 }
 
 // ReloadContract 从 .meph 文件重新加载契约（仅更新规则，保留状态和历史）。

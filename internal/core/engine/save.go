@@ -7,12 +7,17 @@
 //   - Save(): 保存当前会话为子版
 //   - LoadChild(): 从文件加载子版
 //   - LoadChildData(): 将加载的数据应用到 Runtime
-//   - buildChildContent(): 构建 .meph 格式的子版内容
+//   - buildChildContentWithRules(): 构建 .meph 格式的子版内容
 //   - BuildChildPath(): 子版文件路径计算
 //
 // 设计原则：
 //   - 存档逻辑与引擎核心流程（Run）分离
 //   - 所有文件 I/O 集中于此文件，便于测试和替换
+//
+// 子版命名规则（与 Flutter 版对齐，点分隔）：
+//   - 默认：story.meph → story.child.meph
+//   - 分支：story.meph + branch=dark → story.dark.meph
+//   - 已是子版（文件名含 .child 或 .分支）→ 直接覆盖同名文件
 package engine
 
 import (
@@ -25,6 +30,9 @@ import (
 	"mephisto/internal/domain"
 	"mephisto/internal/shared"
 )
+
+// childSuffix 默认子版后缀（对齐 Flutter 的 defaultChildSuffix=".child"）。
+const childSuffix = ".child"
 
 // ============================================================
 // 子版数据模型
@@ -50,15 +58,31 @@ type ChildData struct {
 //   - filename: 母版文件路径
 //   - branch: 分支名（空字符串表示默认子版）
 //
-// 命名规则：
-//   - 默认：story.meph → story_child.meph
-//   - 分支：--branch dark → story_dark.meph
+// 命名规则（与 Flutter 版对齐，点分隔）：
+//   - 默认：story.meph → story.child.meph
+//   - 分支：--branch dark → story.dark.meph
+//   - 已是子版：直接覆盖
+//
+// 外部实时编辑支持（方案 A）：
+//   保存前先读取磁盘上的子版文件（若存在），以磁盘上的【规则】区块为最新规则。
+//   这样用户在编辑器中对规则区块的实时修改不会被本层自动保存覆盖。
+//   静态区块（锚点/世界观/背景等）、状态、记忆、历史仍由引擎内存快照重建。
 //
 // 返回值：
 //   - error: 保存失败时的错误
 func (e *Engine) Save(filename, branch string) error {
-	content := e.buildChildContent()
 	path := BuildChildPath(filename, branch)
+
+	// 若磁盘上已有子版，采用其规则（用户在外部实时编辑的最新规则）
+	// 否则使用引擎当前内存中的规则（与 Run 使用同一份，保证一致性）
+	latestRules := e.runtime.Contract().Rules
+	if _, err := os.Stat(path); err == nil {
+		if disk, err := parser.ParseFile(path); err == nil && len(disk.Rules) > 0 {
+			latestRules = disk.Rules
+		}
+	}
+
+	content := e.buildChildContentWithRules(latestRules)
 
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -110,7 +134,7 @@ func LoadChild(filename, branch string) (*ChildData, error) {
 	}
 
 	return &ChildData{
-		State:    shared.KeyValuesToMap(contract.State),
+		State:    contract.StateMap(),
 		Memories: contract.Memories,
 		History:  contract.History,
 		Found:    true,
@@ -121,19 +145,22 @@ func LoadChild(filename, branch string) (*ChildData, error) {
 // 子版内容构建（私有）
 // ============================================================
 
-// buildChildContent 构建子版文件内容。
+// buildChildContentWithRules 构建子版文件内容，可指定规则来源。
 //
-// 输出格式与 .meph 契约文件完全一致，包含 10 个标准区块：
+// 输出格式与 .meph 契约文件完全一致，包含 9 个标准区块：
 //
-//	角色名、锚点、世界观、角色背景、开局场景、状态、规则、校验、记忆、历史
+//	角色名、锚点、世界观、角色背景、开局场景、状态、规则、记忆、历史
 //
 // 变量替换策略：
 //   - 替换：锚点、世界观、角色背景、开局场景、规则动作
 //   - 不替换：状态（变量源）、记忆（已生成）、历史（已记录）
-func (e *Engine) buildChildContent() string {
+//
+// 参数 rules 允许外部传入不同来源的规则（如磁盘上用户实时编辑的最新规则），
+// 使保存时能保留用户在编辑器中的修改。
+func (e *Engine) buildChildContentWithRules(rules []*domain.Rule) string {
 	var sb strings.Builder
 
-	contract := e.contract
+	contract := e.runtime.Contract()
 	state := e.runtime.State()
 	memories := e.runtime.Memories()
 	history := e.runtime.History()
@@ -148,7 +175,7 @@ func (e *Engine) buildChildContent() string {
 	if len(contract.Anchor) > 0 {
 		fmt.Fprint(&sb, "【锚点】\n")
 		for _, kv := range contract.Anchor {
-			value := shared.ReplacePlaceholders(kv.Value, vars)
+			value := shared.ReplacePlaceholders(fmt.Sprintf("%v", kv.Value.Raw()), vars)
 			fmt.Fprintf(&sb, "- %s: %s\n", kv.Key, value)
 		}
 		fmt.Fprint(&sb, "\n")
@@ -180,19 +207,17 @@ func (e *Engine) buildChildContent() string {
 			orderKeys = append(orderKeys, kv.Key)
 		}
 		// 将运行时新增的键（不在 contract.State 中的）追加到 orderKeys
+		// 使用 map 查找将 O(n²) 降为 O(n)
+		contractKeys := make(map[string]bool, len(orderKeys))
+		for _, k := range orderKeys {
+			contractKeys[k] = true
+		}
 		for k := range state {
-			found := false
-			for _, ordered := range orderKeys {
-				if k == ordered {
-					found = true
-					break
-				}
-			}
-			if !found {
+			if !contractKeys[k] {
 				orderKeys = append(orderKeys, k)
 			}
 		}
-		stateKVs := shared.MapToKeyValues(state, orderKeys)
+		stateKVs := shared.MapToStateItems(state, orderKeys)
 
 		fmt.Fprint(&sb, "【状态】\n")
 		for _, kv := range stateKVs {
@@ -202,9 +227,9 @@ func (e *Engine) buildChildContent() string {
 	}
 
 	// ---- 7. 规则（动作替换占位符） ----
-	if len(contract.Rules) > 0 {
+	if len(rules) > 0 {
 		fmt.Fprint(&sb, "【规则】\n")
-		for _, rule := range contract.Rules {
+		for _, rule := range rules {
 			action := shared.ReplacePlaceholders(rule.Action, vars)
 			if rule.Group != "" {
 				fmt.Fprintf(&sb, "[%s] if %s -> [group:%s] %s\n", rule.Name, rule.Cond, rule.Group, action)
@@ -243,10 +268,10 @@ func (e *Engine) buildChildContent() string {
 
 // BuildChildPath 构建子版文件路径。
 //
-// 命名规则：
-//   - 默认：story.meph → story_child.meph
-//   - 分支：--branch dark → story_dark.meph
-//   - 如果母版本身已经是子版（含 _child 或 _分支名），直接覆盖
+// 命名规则（与 Flutter 版对齐，点分隔）：
+//   - 默认：story.meph → story.child.meph
+//   - 分支：--branch dark → story.dark.meph
+//   - 已是子版（文件名含 `.child` 或 `.分支名`）→ 直接覆盖
 //
 // 参数：
 //   - filename: 母版文件路径
@@ -260,22 +285,45 @@ func BuildChildPath(filename string, branch string) string {
 	ext := filepath.Ext(base)
 	name := strings.TrimSuffix(base, ext)
 
-	// ---- 检查是否已经是子版文件（包含 _child 或任何 _xxx 后缀） ----
-	if strings.HasSuffix(name, "_child") {
+	// ---- 已是子版：直接覆盖 ----
+	// 识别规则：
+	//   - 默认子版：`story.child.meph`（文件名含 `.child`）
+	//   - 分支子版：`story.dark.meph`（文件名含 `.分支名` 且分支名以字母开头）
+	if isChildFileName(name) {
 		return filename
 	}
 
-	// 检查是否包含任何下划线后缀（如 _dark, _light, _branch 等）
-	lastUnderscore := strings.LastIndex(name, "_")
-	if lastUnderscore != -1 && lastUnderscore < len(name)-1 {
-		// 有下划线后缀，说明已经是子版文件，直接覆盖
-		return filename
-	}
-
-	// ---- 构建子版路径 ----
+	// ---- 构建子版路径（点分隔，对齐 Flutter） ----
 	if branch != "" {
-		return filepath.Join(dir, name+"_"+branch+ext)
+		return filepath.Join(dir, name+"."+branch+ext)
 	}
 
-	return filepath.Join(dir, name+"_child"+ext)
+	return filepath.Join(dir, name+childSuffix+ext)
+}
+
+// isChildFileName 判断文件名（不含扩展名）是否为子版文件。
+//
+// 规则（对齐 Flutter child_save_store.dart 的精准匹配）：
+//   - 默认子版：`xxx.child`
+//   - 分支子版：`xxx.分支名`（分支名以字母开头，排除纯数字序号）
+//
+// 这样 `my_story_1.meph`（数字序号）不会被误判为子版。
+func isChildFileName(name string) bool {
+	// 默认子版：.child 后缀
+	if strings.HasSuffix(name, childSuffix) {
+		return true
+	}
+
+	// 分支子版：最后一个点和字母分支名
+	lastDot := strings.LastIndex(name, ".")
+	if lastDot == -1 || lastDot == len(name)-1 {
+		return false
+	}
+	suffixPart := name[lastDot+1:]
+	if suffixPart == "" {
+		return false
+	}
+	// 仅字母开头的后缀视为分支名（排除空/数字/下划线）
+	first := suffixPart[0]
+	return (first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z')
 }

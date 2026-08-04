@@ -13,8 +13,8 @@ import (
 
 // 版本信息（构建时注入）
 var (
-	Version   = "v1.0.3"
-	BuildTime = "2026-07-25"
+	Version   = "v1.1.0"
+	BuildTime = "2026-08-05"
 )
 
 // printVersion 打印版本信息
@@ -38,30 +38,39 @@ func printHelp() {
   %[1]s <文件>                        # 简写，等价于 parse
 
 子命令:
-  init  [模板名]                       生成示例契约文件（默认 sample.meph）
+  init  [模板名]                       生成示例契约文件（faust / dantes，默认 faust）
   parse <文件> [选项]                  解析 .meph 契约，输出 JSON
   run   <文件> [选项]                  启动交互式对话模式
   version                             显示版本信息
   help                                显示此帮助信息
 
+约定:
+  -<字母>                             短选项（如 -b、-o、-q）
+  --<单词>                            长选项（如 --branch、--output）
+                                        长选项必须使用双横线
+
+通用选项:
+  -h, --help                          显示此帮助信息
+
 parse 选项:
-  -o <路径>                           输出到文件（默认输出到 stdout）
-  -q                                  静默模式，只输出错误
+  -o, --output <路径>                 输出到文件（默认输出到 stdout）
+  -q, --quiet                         静默模式，只输出错误
 
 run 选项:
-  -branch <分支名>                    分支名（用于多分支故事线）
-  -reset                              忽略子版存档，从母版重新开始
-  -debug                              启用规则调试模式
-  -client <类型>                      LLM 客户端: deepseek, openai, ollama
+  -b, --branch <分支名>               分支名（用于多分支故事线）
+  -r, --reset                         忽略子版存档，从母版重新开始
+  -d, --debug                         启用规则调试模式
+  -q, --quiet                         静默模式
+  -c, --client <类型>                 LLM 客户端: openai（OpenAI 兼容，含 DeepSeek）、ollama
                                         （默认从 MEPHISTO_CLIENT 环境变量读取）
-  -model <模型名>                     模型名称
+  -m, --model <模型名>                模型名称
                                         （默认从 MEPHISTO_MODEL 环境变量读取）
-  -api-key <密钥>                     API 密钥
+      --api-key <密钥>                API 密钥
                                         （默认从 OPENAI_API_KEY 环境变量读取）
-  -base-url <URL>                     API 基础 URL
+      --base-url <URL>                API 基础 URL
                                         （默认从 OPENAI_BASE_URL 环境变量读取）
-  -constraints <文件>                 自定义输出约束文件（默认使用内置约束）
-  -max-tokens <N>                     最大生成 Token 数（默认 4096）
+      --constraints <文件>            自定义输出约束文件（默认使用内置约束）
+      --max-tokens <N>                最大生成 Token 数（默认 4096）
 
 交互模式 (run) 内置命令:
   /state                              显示当前状态
@@ -71,17 +80,18 @@ run 选项:
   exit / quit / q                     退出对话
 
 示例:
-  %[1]s init                                      生成 sample.meph
+  %[1]s init                                      生成 faust.meph
   %[1]s init faust                                生成 faust.meph
-  %[1]s data/sample.meph                          解析并输出 JSON（简写）
-  %[1]s parse data/sample.meph                    同上，完整写法
-  %[1]s parse data/sample.meph -o out.json        解析并保存到文件
-  %[1]s run data/sample.meph                      启动对话
-  %[1]s run data/sample.meph -reset               忽略存档重新开始
-  %[1]s run data/sample.meph -branch dark         使用 dark 分支
-  %[1]s run data/sample.meph -client ollama       使用 Ollama 运行
-  %[1]s run data/sample.meph -debug               启用调试模式
-  %[1]s run data/sample.meph -reset -branch dark  组合使用
+  %[1]s init dantes                               生成 dantes.meph
+  %[1]s data/faust.meph                          解析并输出 JSON（简写）
+  %[1]s parse data/faust.meph                    同上，完整写法
+  %[1]s parse data/faust.meph --output out.json  解析并保存到文件
+  %[1]s run data/faust.meph                      启动对话
+  %[1]s run data/faust.meph --reset              忽略存档重新开始
+  %[1]s run data/faust.meph --branch dark        使用 dark 分支
+  %[1]s run data/faust.meph --client ollama      使用 Ollama 运行
+  %[1]s run data/faust.meph --debug              启用调试模式
+  %[1]s run data/faust.meph --reset --branch dark  组合使用
 
 退出码:
   0  成功

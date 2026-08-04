@@ -225,7 +225,7 @@ func TestParseKeyValue(t *testing.T) {
 		name      string
 		lines     []Line
 		blockName string
-		want      []domain.KeyValue
+		want      []domain.StateItem
 		wantErr   bool
 	}{
 		{
@@ -235,9 +235,9 @@ func TestParseKeyValue(t *testing.T) {
 				{Text: "- 键2：值2", Number: 2},
 			},
 			blockName: "锚点",
-			want: []domain.KeyValue{
-				{Key: "键1", Value: "值1"},
-				{Key: "键2", Value: "值2"},
+			want: []domain.StateItem{
+				{Key: "键1", Value: domain.ParseStateValue("值1")},
+				{Key: "键2", Value: domain.ParseStateValue("值2")},
 			},
 			wantErr: false,
 		},
@@ -249,8 +249,8 @@ func TestParseKeyValue(t *testing.T) {
 				{Text: "- 键: 值", Number: 3},
 			},
 			blockName: "锚点",
-			want: []domain.KeyValue{
-				{Key: "键", Value: "值"},
+			want: []domain.StateItem{
+				{Key: "键", Value: domain.ParseStateValue("值")},
 			},
 			wantErr: false,
 		},

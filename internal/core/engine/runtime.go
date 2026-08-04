@@ -25,7 +25,6 @@ import (
 	"slices"
 
 	"mephisto/internal/domain"
-	"mephisto/internal/shared"
 	"sync"
 )
 
@@ -69,10 +68,10 @@ func NewRuntime(contract *domain.Contract, maxHistory int) *Runtime {
 		maxHistory: maxHistory,
 	}
 
-	// 初始化状态：将契约中的键值对转换为运行时类型
-	// 使用 shared.ParseValue 自动推断类型（bool/int/float64/string）
+	// 初始化状态：直接使用解析时已类型化的值
+	// StateValue.Raw() 返回底层 Go 值（bool/int/float64/string）
 	for _, kv := range contract.State {
-		r.state[kv.Key] = shared.ParseValue(kv.Value)
+		r.state[kv.Key] = kv.Value.Raw()
 	}
 
 	return r

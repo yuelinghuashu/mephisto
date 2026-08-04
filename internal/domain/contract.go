@@ -13,8 +13,8 @@ type Contract struct {
 
 	// 【锚点】键值对列表，推荐
 	// 核心人格设定，永不压缩
-	// 存储为原始行列表，保留格式
-	Anchor []KeyValue `json:"anchor,omitempty"`
+	// 存储为类型化键值对列表
+	Anchor []StateItem `json:"anchor,omitempty"`
 
 	// 【世界观】多行文本，可选
 	Worldview string `json:"worldview,omitempty"`
@@ -27,7 +27,7 @@ type Contract struct {
 
 	// 【状态】键值对列表，可选
 	// 动态变量（情绪、生命值、位置等）
-	State []KeyValue `json:"state,omitempty"`
+	State []StateItem `json:"state,omitempty"`
 
 	// 【规则】规则列表，可选
 	Rules []*Rule `json:"rules,omitempty"`
@@ -45,10 +45,20 @@ type Contract struct {
 	History []HistoryEntry `json:"history,omitempty"`
 }
 
-// KeyValue 表示一个键值对（用于锚点、状态等区块）
-type KeyValue struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
+// ============================================================
+// 便捷转换
+// ============================================================
+
+// StateMap 返回状态映射（键 → 底层 Go 值）。
+//
+// 引擎需要底层 any 值（int/float64/bool/string），
+// 这里解包 StateValue.Raw()，保持引擎侧 map[string]any 的兼容性。
+func (c *Contract) StateMap() map[string]any {
+	m := make(map[string]any, len(c.State))
+	for _, item := range c.State {
+		m[item.Key] = item.Value.Raw()
+	}
+	return m
 }
 
 // Rule 表示一条规则定义

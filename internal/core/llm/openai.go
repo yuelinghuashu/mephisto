@@ -1,7 +1,7 @@
 // internal/core/llm/openai.go
 //
 // 本文件提供 OpenAI/DeepSeek 兼容的 LLM 客户端实现。
-// 支持流式和非流式两种调用方式。
+// 只支持流式输出（与 Flutter 后版对齐）。
 package llm
 
 import (
@@ -56,55 +56,6 @@ func NewOpenAIClient(cfg OpenAIConfig) *OpenAIClient {
 // chatEndpoint 返回完整的 API 端点 URL。
 func (c *OpenAIClient) chatEndpoint() string {
 	return strings.TrimSuffix(c.config.BaseURL, "/") + "/chat/completions"
-}
-
-// Generate 实现同步生成（非流式）。
-func (c *OpenAIClient) Generate(ctx context.Context, prompt string) (string, error) {
-	reqBody := map[string]any{
-		"model":      c.config.Model,
-		"messages":   []map[string]string{{"role": "user", "content": prompt}},
-		"stream":     false,
-		"max_tokens": c.config.MaxTokens,
-	}
-
-	jsonBody, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", fmt.Errorf("序列化请求失败：%w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", c.chatEndpoint(), bytes.NewReader(jsonBody))
-	if err != nil {
-		return "", fmt.Errorf("创建请求失败：%w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.config.APIKey)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("请求失败：%w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("API 返回错误：%s", resp.Status)
-	}
-
-	var result struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("解析响应失败：%w", err)
-	}
-
-	if len(result.Choices) == 0 {
-		return "", fmt.Errorf("API 返回空响应")
-	}
-
-	return strings.TrimSpace(result.Choices[0].Message.Content), nil
 }
 
 // GenerateStream 实现流式生成。

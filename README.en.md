@@ -11,11 +11,23 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v1.0.2-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-v1.1.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/Go-1.26+-00ADD8" alt="Go Version">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   <a href="./README.md"><img src="https://img.shields.io/badge/lang-zh--cn-blue" alt="中文"></a>
 </p>
+
+---
+
+## 📌 Project Status
+
+> ⚠️ **Transitional Version Notice**
+
+**This repository (CLI edition) is the Go command-line transitional version of Mephisto.**
+
+- 🎯 **Primary version**: [Mephisto Flutter edition](https://github.com/yuelinghuashu/mephisto-gui) — a cross-platform GUI app (Windows / macOS / Linux / Android / iOS) with a complete graphical narrative experience (in-app editor, rule hot-reload, custom style rules, multi-platform contract storage). It is the **primary development target**.
+- ⏳ **Transitional role**: The CLI edition is used to quickly validate the core engine logic and command-line usage scenarios. Once its features are aligned with the Flutter edition, the CLI edition will **enter maintenance mode** (bug fixes and change synchronization only) and will not introduce major feature changes.
+- 🔗 **Compatibility**: Both editions share the same `.meph` contract syntax and narrative engine design; contract files are fully compatible.
 
 ---
 
@@ -114,16 +126,16 @@ Mephisto supports multiple branches within the same story world:
 
 ```bash
 # Default child save (mainline)
-./mephisto run data/sample.meph
+./mephisto run data/faust.meph
 
 # Specify a branch
-./mephisto run data/sample.meph -branch dark
+./mephisto run data/faust.meph --branch dark
 
 # Ignore child save, restart from the master
-./mephisto run data/sample.meph -reset
+./mephisto run data/faust.meph --reset
 
 # Combined
-./mephisto run data/sample.meph -reset -branch dark
+./mephisto run data/faust.meph --reset --branch dark
 ```
 
 ---
@@ -143,30 +155,43 @@ Mephisto supports multiple branches within the same story world:
 
 ## 🛠️ CLI Options
 
+<details>
+<summary>📖 View full CLI options</summary>
+
 ```bash
 ./mephisto <subcommand> [options] <file>
+./mephisto <file>                   # Shorthand, equivalent to parse
 
 Subcommands:
-  init  [template]             Generate a sample contract file (default: sample.meph)
+  init  [template]             Generate a sample contract file (faust / dantes, default: faust)
   parse <file> [options]       Parse a .meph contract, output JSON
   run   <file> [options]       Start an interactive conversation
   version                      Show version info
   help                         Show this help
 
+Conventions:
+  -<letter>                    Short option (e.g., -b, -o, -q)
+  --<word>                     Long option (e.g., --branch, --output)
+                               Long options must use double dashes
+
+Common options:
+  -h, --help                   Show help
+
 parse options:
-  -o <path>                    Output to file (default: stdout)
-  -q                           Quiet mode, only print errors
+  -o, --output <path>          Output to file (default: stdout)
+  -q, --quiet                  Quiet mode, only print errors
 
 run options:
-  -branch <name>               Branch name (for multi-branch storylines)
-  -reset                       Ignore child save, restart from master
-  -debug                       Enable rule debug mode
-  -client <type>               LLM client: deepseek/openai/ollama
-  -model <name>                Model name
-  -api-key <key>               API key
-  -base-url <url>              API base URL
-  -constraints <file>          Custom constraint file (default: built-in constraints)
-  -max-tokens <n>              Max generated tokens (default: 4096)
+  -b, --branch <name>          Branch name (for multi-branch storylines)
+  -r, --reset                  Ignore child save, restart from master
+  -d, --debug                  Enable rule debug mode
+  -c, --client <type>          LLM client: openai (OpenAI-compatible, incl. DeepSeek) / ollama
+  -m, --model <name>           Model name
+      --api-key <key>          API key
+      --base-url <url>         API base URL
+      --constraints <file>     Custom constraint file (default: built-in constraints)
+      --max-tokens <n>         Max generated tokens (default: 4096)
+  -q, --quiet                  Quiet mode
 
 Interactive mode commands:
   /state                       Show current state
@@ -179,11 +204,14 @@ Environment variables:
   OPENAI_API_KEY               API key (lower priority than CLI args)
   OPENAI_BASE_URL              API base URL
   MEPHISTO_MODEL               Model name
-  MEPHISTO_CLIENT              Client type (deepseek/openai/ollama)
+  MEPHISTO_CLIENT              Client type (openai/ollama; DeepSeek uses the openai client via BaseURL)
   MEPHISTO_BRANCH              Default branch name
   MEPHISTO_DEBUG               Enable debug mode
   MEPHISTO_RESET               Ignore child save
+  MEPHISTO_QUIET               Quiet mode
 ```
+
+</details>
 
 ---
 

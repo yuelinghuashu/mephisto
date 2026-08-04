@@ -219,7 +219,7 @@ func (s *Session) printWelcome() {
 	// ---- 构建变量映射 ----
 	vars := shared.BuildPlaceholderVars(roleName, map[string]any{})
 	for _, kv := range contract.State {
-		vars[kv.Key] = kv.Value
+		vars[kv.Key] = fmt.Sprintf("%v", kv.Value.Raw())
 	}
 
 	fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
@@ -232,7 +232,7 @@ func (s *Session) printWelcome() {
 		if len(contract.Anchor) > 0 {
 			fmt.Println("【锚点】")
 			for _, kv := range contract.Anchor {
-				value := shared.ReplacePlaceholders(kv.Value, vars)
+				value := shared.ReplacePlaceholders(fmt.Sprintf("%v", kv.Value.Raw()), vars)
 				fmt.Printf("  %s: %s\n", kv.Key, value)
 			}
 			fmt.Println()
@@ -268,7 +268,7 @@ func (s *Session) printWelcome() {
 			if val, ok := state[kv.Key]; ok {
 				fmt.Printf("  %s: %v\n", kv.Key, val)
 			} else {
-				fmt.Printf("  %s: %s\n", kv.Key, kv.Value)
+				fmt.Printf("  %s: %s\n", kv.Key, kv.Value.Raw())
 			}
 		}
 		fmt.Println()

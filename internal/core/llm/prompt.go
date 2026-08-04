@@ -40,7 +40,7 @@ import (
 //   - Constraints: 输出约束（控制 LLM 的输出格式）
 type PromptTemplate struct {
 	RoleName    string
-	Anchor      []domain.KeyValue
+	Anchor      []domain.StateItem
 	Worldview   string
 	Background  string
 	State       map[string]any
@@ -61,19 +61,6 @@ var NarrativeConstraints = `【绝对格式要求】你必须以小说叙事风�
 错误示例（绝对禁止）：
 （悬浮在光之国上空）【贝利亚】：（冷笑）“这么多年了...”`
 
-// BuildPrompt 构建完整的 Prompt 文本。
-//
-// 参数：
-//   - contract      : 契约数据（静态部分：角色名、世界观、背景、锚点）
-//   - currentState  : 当前运行时状态（动态部分：情绪、生命值等）
-//   - history       : 对话历史（命运与角色的交互记录）
-//   - currentMemories: 当前运行时记忆（由注入动作和记忆提取累积，而非契约初始值）
-//   - input         : 当前命运的指引（用户输入）
-//   - constraints   : 自定义约束（空字符串时使用默认）
-//
-// 返回值：
-//   - string: 完整的 Prompt 文本
-//
 // LoadConstraints 从文件中读取自定义约束。
 // 如果 path 为空，返回默认约束 NarrativeConstraints。
 func LoadConstraints(path string) (string, error) {
@@ -193,12 +180,12 @@ func RenderPrompt(tmpl PromptTemplate) string {
 // extractStyle 从锚点中提取风格描述。
 // 依次查找 "风格"、"说话风格"、"人格标签"、"核心信念" 键，
 // 返回第一个非空的值。
-func extractStyle(anchor []domain.KeyValue) string {
+func extractStyle(anchor []domain.StateItem) string {
 	styleKeys := []string{"风格", "说话风格", "人格标签", "核心信念"}
 	for _, kv := range anchor {
 		for _, key := range styleKeys {
-			if kv.Key == key && kv.Value != "" {
-				return kv.Value
+			if kv.Key == key && kv.Value.Raw() != "" {
+				return fmt.Sprintf("%v", kv.Value.Raw())
 			}
 		}
 	}

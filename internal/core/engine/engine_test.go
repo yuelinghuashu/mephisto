@@ -3,7 +3,7 @@
 // 本文件包含引擎包的单元测试。
 // 测试覆盖：
 //  1. 条件评估函数（evalCondition）
-//  2. 规则匹配（matchRule，含互斥组）
+//  2. 规则匹配（matchActiveRule，含互斥组）
 //  3. 动作执行（ExecuteAction）
 //  4. 引擎核心（Engine.Run）
 //  5. 状态、历史、记忆的管理
@@ -11,9 +11,12 @@ package engine
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"mephisto/internal/core/parser"
 	"mephisto/internal/domain"
 )
 
@@ -79,7 +82,6 @@ func TestEvalRoll(t *testing.T) {
 	}{
 		// ---- 默认阈值 ----
 		{"默认 1d100 范围 [1,100]", "roll(1d100)", 1, 100},
-		{"默认 2d6 范围 [2,12]", "roll(2d6)", 2, 12},
 
 		// ---- 自定义阈值（只验证返回值的数值范围，是否满足阈值由条件逻辑保证） ----
 		{"自定义 >=80", "roll(1d100) >= 80", 1, 100},
@@ -88,7 +90,6 @@ func TestEvalRoll(t *testing.T) {
 		{"自定义 <30", "roll(1d100) < 30", 1, 100},
 		{"自定义 ==50", "roll(1d100) == 50", 1, 100},
 		{"自定义 !=50", "roll(1d100) != 50", 1, 100},
-		{"自定义 2d6 >=10", "roll(2d6) >= 10", 2, 12},
 	}
 
 	for _, tt := range tests {
@@ -151,25 +152,23 @@ func TestEvalRollWithCustomThreshold(t *testing.T) {
 
 func TestParseRollExpr(t *testing.T) {
 	tests := []struct {
-		name         string
-		cond         string
-		wantOk       bool
-		wantCount    int
-		wantSides    int
-		wantOp       string
+		name          string
+		cond          string
+		wantOk        bool
+		wantSides     int
+		wantOp        string
 		wantThreshold int
-		wantRollCore string
-		wantMaxValue int
+		wantRollCore  string
+		wantMaxValue  int
 	}{
-		{"默认无阈值", "roll(1d100)", true, 1, 100, "", 0, "roll(1d100)", 100},
-		{"默认 2d6", "roll(2d6)", true, 2, 6, "", 0, "roll(2d6)", 12},
-		{"自定义 >=80", "roll(1d100) >= 80", true, 1, 100, ">=", 80, "roll(1d100)", 100},
-		{"自定义 >80", "roll(1d100) > 80", true, 1, 100, ">", 80, "roll(1d100)", 100},
-		{"自定义 <=30", "roll(1d100) <= 30", true, 1, 100, "<=", 30, "roll(1d100)", 100},
-		{"自定义 <30", "roll(1d100) < 30", true, 1, 100, "<", 30, "roll(1d100)", 100},
-		{"自定义 ==50", "roll(1d100) == 50", true, 1, 100, "==", 50, "roll(1d100)", 100},
-		{"自定义 !=50", "roll(1d100) != 50", true, 1, 100, "!=", 50, "roll(1d100)", 100},
-		{"非法格式", "xxx", false, 0, 0, "", 0, "", 0},
+		{"默认无阈值", "roll(1d100)", true, 100, "", 0, "roll(1d100)", 100},
+		{"自定义 >=80", "roll(1d100) >= 80", true, 100, ">=", 80, "roll(1d100)", 100},
+		{"自定义 >80", "roll(1d100) > 80", true, 100, ">", 80, "roll(1d100)", 100},
+		{"自定义 <=30", "roll(1d100) <= 30", true, 100, "<=", 30, "roll(1d100)", 100},
+		{"自定义 <30", "roll(1d100) < 30", true, 100, "<", 30, "roll(1d100)", 100},
+		{"自定义 ==50", "roll(1d100) == 50", true, 100, "==", 50, "roll(1d100)", 100},
+		{"自定义 !=50", "roll(1d100) != 50", true, 100, "!=", 50, "roll(1d100)", 100},
+		{"非法格式", "xxx", false, 0, "", 0, "", 0},
 	}
 
 	for _, tt := range tests {
@@ -181,9 +180,6 @@ func TestParseRollExpr(t *testing.T) {
 			}
 			if !ok {
 				return
-			}
-			if re.Count != tt.wantCount {
-				t.Errorf("Count = %d, want %d", re.Count, tt.wantCount)
 			}
 			if re.Sides != tt.wantSides {
 				t.Errorf("Sides = %d, want %d", re.Sides, tt.wantSides)
@@ -250,7 +246,7 @@ func TestExtractRollInfo(t *testing.T) {
 // 规则匹配测试（含互斥组）
 // ============================================================
 
-func TestMatchRule(t *testing.T) {
+func TestMatchActiveRule(t *testing.T) {
 	state := map[string]any{"灵魂完整度": 85}
 
 	rules := []*domain.Rule{
@@ -273,7 +269,7 @@ func TestMatchRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rule, matched, _ := matchRule(rules, tt.input, state, false)
+			rule, matched, _ := matchActiveRule(rules, tt.input, state, false)
 			if matched != tt.wantMatched {
 				t.Errorf("matched = %v, want %v", matched, tt.wantMatched)
 				return
@@ -287,7 +283,7 @@ func TestMatchRule(t *testing.T) {
 	// ---- 互斥组测试 ----
 	t.Run("互斥组", func(t *testing.T) {
 		// 输入同时匹配攻击和防御，但应该只触发攻击（第一个）
-		rule, matched, _ := matchRule(rules, "我要攻击和防御！", state, false)
+		rule, matched, _ := matchActiveRule(rules, "我要攻击和防御！", state, false)
 		if !matched {
 			t.Error("期望匹配到规则")
 			return
@@ -305,10 +301,10 @@ func TestMatchRule(t *testing.T) {
 func TestExecuteAction(t *testing.T) {
 	contract := &domain.Contract{
 		RoleName: "浮士德",
-		State: []domain.KeyValue{
-			{Key: "灵魂完整度", Value: "50"},
-			{Key: "生命值", Value: "70"},
-			{Key: "等级", Value: "10"},
+		State: []domain.StateItem{
+			{Key: "灵魂完整度", Value: domain.ParseStateValue("50")},
+			{Key: "生命值", Value: domain.ParseStateValue("70")},
+			{Key: "等级", Value: domain.ParseStateValue("10")},
 		},
 	}
 	runtime := NewRuntime(contract, 20)
@@ -459,9 +455,9 @@ func TestEngineRun(t *testing.T) {
 			}
 			rules = append(rules, tt.extraRules...)
 
-			state := []domain.KeyValue{{Key: "灵魂完整度", Value: "50"}}
+			state := []domain.StateItem{{Key: "灵魂完整度", Value: domain.ParseStateValue("50")}}
 			for k, v := range tt.extraState {
-				state = append(state, domain.KeyValue{Key: k, Value: fmt.Sprintf("%v", v)})
+				state = append(state, domain.StateItem{Key: k, Value: domain.ParseStateValue(fmt.Sprintf("%v", v))})
 			}
 
 			contract := &domain.Contract{
@@ -498,7 +494,7 @@ func TestEngineRun(t *testing.T) {
 func TestEngineHistory(t *testing.T) {
 	contract := &domain.Contract{
 		RoleName: "测试角色",
-		State:    []domain.KeyValue{},
+		State:    []domain.StateItem{},
 		Rules:    []*domain.Rule{},
 	}
 
@@ -529,8 +525,8 @@ func TestEngineHistory(t *testing.T) {
 func TestEngineStateAndMemories(t *testing.T) {
 	contract := &domain.Contract{
 		RoleName: "测试角色",
-		State: []domain.KeyValue{
-			{Key: "初始状态", Value: "初始值"},
+		State: []domain.StateItem{
+			{Key: "初始状态", Value: domain.ParseStateValue("初始值")},
 		},
 		Memories: []string{"初始记忆"},
 		Rules:    []*domain.Rule{},
@@ -565,16 +561,16 @@ func TestEngineStateAndMemories(t *testing.T) {
 func TestDumpFormattedMeph(t *testing.T) {
 	contract := &domain.Contract{
 		RoleName: "浮士德",
-		Anchor: []domain.KeyValue{
-			{Key: "核心信念", Value: `"知识高于一切"`},
-			{Key: "绝对禁忌", Value: "不会承认自己后悔"},
+		Anchor: []domain.StateItem{
+			{Key: "核心信念", Value: domain.ParseStateValue(`"知识高于一切"`)},
+			{Key: "绝对禁忌", Value: domain.ParseStateValue("不会承认自己后悔")},
 		},
 		Worldview:  "梅菲斯特是地狱的使者，擅长以契约诱捕人类灵魂。",
 		Background: "{角色名}在绝望中与梅菲斯特签订了契约。",
 		Opening:    "书斋中烛火摇曳，{角色名}望着窗外的月光。",
-		State: []domain.KeyValue{
-			{Key: "灵魂完整度", Value: "85"},
-			{Key: "情绪", Value: "永不满足"},
+		State: []domain.StateItem{
+			{Key: "灵魂完整度", Value: domain.ParseStateValue("85")},
+			{Key: "情绪", Value: domain.ParseStateValue("永不满足")},
 		},
 		Rules: []*domain.Rule{
 			{Name: "契约", Cond: `包含 "契约"`, Action: `注入 "{角色名}与梅菲斯特签订了契约"`},
@@ -585,51 +581,57 @@ func TestDumpFormattedMeph(t *testing.T) {
 	eng := New(contract)
 
 	// 第一轮对话：触发契约注入（变量替换）
-	t.Log("===== 第一轮：触发契约注入（{角色名}→浮士德）=====")
+	t.Log("━━━ 第一轮：触发契约注入（{角色名}→浮士德）━━━")
 	_, err := eng.Run("契约已经签下", nil)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 
 	// 第二轮对话：触发骰子注入（骰子结果随机）
-	t.Log("===== 第二轮：触发灵魂代价判定（roll(1d100) >= 80）=====")
+	t.Log("━━━ 第二轮：触发灵魂代价判定（roll(1d100) >= 80）━━━")
 	_, err = eng.Run("我感觉力量在涌动！", nil)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 
 	// 获取格式化后的 .meph 内容
-	content := eng.buildChildContent()
+	content := eng.buildChildContentWithRules(eng.Contract().Rules)
 
-	t.Logf("格式化后的 .meph 文件内容：\n%s", content)
+	t.Logf("━━━ 格式化后的 .meph 文件内容 ━━━\n%s━━━━━━━━━━━━━━━━━━━━", content)
 
 	// 断言：变量替换已生效
 	if !strings.Contains(content, "浮士德与梅菲斯特签订了契约") {
-		t.Error("变量替换未生效：{角色名} 应被替换为 浮士德")
+		t.Error("✦ 变量替换断言失败：{角色名} 应被替换为 浮士德")
+	} else {
+		t.Log("✦ 变量替换已生效")
 	}
 
 	// 断言：roll 骰子结果已包含在记忆描述中
 	hasRollResult1 := strings.Contains(content, "感到灵魂正在流逝")
 	if !hasRollResult1 {
-		t.Log("注：灵魂代价注入未触发（roll 结果未达到阈值 80，属正常随机波动）")
+		t.Log("⏭ 注：灵魂代价注入未触发（roll 结果未达到阈值 80，属正常随机波动）")
+	} else {
+		t.Log("✦ 灵魂代价判定已触发（roll 达到阈值 80）")
 	}
 
 	// 断言：锚点内容已保留
 	if !strings.Contains(content, "知识高于一切") {
-		t.Error("锚点内容未保留")
+		t.Error("✦ 锚点内容断言失败：知识高于一切 未保留")
+	} else {
+		t.Log("✦ 锚点内容已保留")
 	}
 
 	// 断言：状态已更新（历史中记录了状态保持不变）
 	state := eng.State()
 	if state["灵魂完整度"] != 85 {
-		t.Logf("注意：灵魂完整度当前值为 %v", state["灵魂完整度"])
+		t.Logf("⏭ 注意：灵魂完整度当前值为 %v（预期 85）", state["灵魂完整度"])
 	}
 }
 
 func TestEngineEmptyInput(t *testing.T) {
 	contract := &domain.Contract{
 		RoleName: "浮士德",
-		State:    []domain.KeyValue{},
+		State:    []domain.StateItem{},
 		Rules:    []*domain.Rule{},
 	}
 	eng := New(contract)
@@ -649,7 +651,7 @@ func TestEngineContractWithNoRules(t *testing.T) {
 	// 空契约（无状态、无规则、无记忆）也能正常工作
 	contract := &domain.Contract{
 		RoleName: "测试角色",
-		State:    []domain.KeyValue{},
+		State:    []domain.StateItem{},
 		Rules:    []*domain.Rule{},
 	}
 	eng := New(contract)
@@ -678,7 +680,7 @@ func TestEngineContractWithNoRules(t *testing.T) {
 func TestEngineConcurrentAccess(t *testing.T) {
 	contract := &domain.Contract{
 		RoleName: "测试角色",
-		State:    []domain.KeyValue{},
+		State:    []domain.StateItem{},
 		Rules:    []*domain.Rule{},
 	}
 	eng := New(contract)
@@ -698,10 +700,105 @@ func TestEngineConcurrentAccess(t *testing.T) {
 	}
 }
 
+// TestSavePreservesExternalRuleEdits 验证 Save 保存时保留用户在外部编辑的规则。
+//
+// 场景：引擎保存初始子版后，用户在编辑器修改子版文件的【规则】区块；
+// 再次 Save 时，应采用磁盘上的最新规则而非引擎内存旧规则。
+func TestSavePreservesExternalRuleEdits(t *testing.T) {
+	dir := t.TempDir()
+	filename := filepath.Join(dir, "story.meph")
+
+	contract := &domain.Contract{
+		RoleName: "浮士德",
+		Rules: []*domain.Rule{
+			{Name: "旧规则", Cond: `包含 "旧"`, Action: "旧动作"},
+		},
+	}
+	eng := New(contract)
+
+	// 1. 首次保存生成子版
+	if err := eng.Save(filename, ""); err != nil {
+		t.Fatalf("首次 Save() error = %v", err)
+	}
+	childPath := BuildChildPath(filename, "")
+
+	// 2. 模拟用户在外部编辑子版规则区块
+	external := `【规则】
+[外部规则] if 包含 "外部" -> 外部动作
+`
+	if err := os.WriteFile(childPath, []byte(external), 0644); err != nil {
+		t.Fatalf("写入外部编辑失败: %v", err)
+	}
+
+	// 3. 再次 Save（应保留磁盘上的外部规则）
+	if err := eng.Save(filename, ""); err != nil {
+		t.Fatalf("第二次 Save() error = %v", err)
+	}
+
+	// 4. 验证保存后的文件包含外部规则
+	disk, err := parser.ParseFile(childPath)
+	if err != nil {
+		t.Fatalf("解析保存后的子版失败: %v", err)
+	}
+	if len(disk.Rules) != 1 || disk.Rules[0].Name != "外部规则" {
+		t.Errorf("保存后规则应为磁盘外部规则 [外部规则]，实际 %+v", disk.Rules)
+	}
+}
+
+// TestBuildChildPath 验证子版文件路径构建（点分隔命名，对齐 Flutter）。
+func TestBuildChildPath(t *testing.T) {
+	tests := []struct {
+		name     string
+		filename string
+		branch   string
+		want     string
+	}{
+		{
+			name:     "默认子版（无分支）",
+			filename: "data/story.meph",
+			branch:   "",
+			want:     "data/story.child.meph",
+		},
+		{
+			name:     "分支子版",
+			filename: "data/story.meph",
+			branch:   "dark",
+			want:     "data/story.dark.meph",
+		},
+		{
+			name:     "默认子版再次保存（覆盖自身）",
+			filename: "data/story.child.meph",
+			branch:   "",
+			want:     "data/story.child.meph",
+		},
+		{
+			name:     "分支子版再次保存（覆盖自身）",
+			filename: "data/story.dark.meph",
+			branch:   "dark",
+			want:     "data/story.dark.meph",
+		},
+		{
+			name:     "带数字序号的名字不被误判为子版",
+			filename: "data/my_story_1.meph",
+			branch:   "",
+			want:     "data/my_story_1.child.meph",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := BuildChildPath(tt.filename, tt.branch)
+			if got != tt.want {
+				t.Errorf("BuildChildPath(%q, %q) = %q, want %q", tt.filename, tt.branch, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestEngineDefaultResponse(t *testing.T) {
 	contract := &domain.Contract{
 		RoleName: "浮士德",
-		State:    []domain.KeyValue{},
+		State:    []domain.StateItem{},
 		Rules:    []*domain.Rule{},
 	}
 	eng := New(contract)
@@ -717,7 +814,7 @@ func TestEngineDefaultResponse(t *testing.T) {
 
 	contract2 := &domain.Contract{
 		RoleName: "",
-		State:    []domain.KeyValue{},
+		State:    []domain.StateItem{},
 		Rules:    []*domain.Rule{},
 	}
 	eng2 := New(contract2)

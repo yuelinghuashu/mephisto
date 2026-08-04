@@ -11,11 +11,23 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v1.0.2-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-v1.1.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/Go-1.26+-00ADD8" alt="Go Version">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   <a href="./README.en.md"><img src="https://img.shields.io/badge/lang-en-red" alt="English"></a>
 </p>
+
+---
+
+## 📌 项目定位
+
+> ⚠️ **过渡版本声明**
+
+**本仓库（CLI 版）是梅菲斯特的 Go 命令行过渡版本。**
+
+- 🎯 **主力版本**：[Mephisto Flutter 版](https://github.com/yuelinghuashu/mephisto-gui) —— 跨平台 GUI 应用（Windows / macOS / Linux / Android / iOS），提供完整的图形化叙事体验（应用内编辑器、规则热重载、自定义风格规则、多端契约存储），是**当前主力开发目标**。
+- ⏳ **过渡定位**：CLI 版用于快速验证核心引擎逻辑与命令行使用场景。当功能与 Flutter 版对齐完成后，CLI 版将**正式进入维护期**（仅修复 bug、同步变更），不再引入重大功能改动。
+- 🔗 **兼容性**：两个版本共享同一套 `.meph` 契约语法与叙事引擎设计，契约文件完全兼容。
 
 ---
 
@@ -96,7 +108,10 @@ go build -o ./mephisto ./cmd/mephisto
 ./mephisto run data/faust.meph
 ```
 
-### 3. 交互示例
+### 3. 交互示例（可展开）
+
+<details>
+<summary>🎬 查看完整交互示例（浮士德论道）</summary>
 
 > 以下输出使用了 `--constraints` 自定义约束，LLM 遵循约束文件中的格式要求生成叙事。
 
@@ -177,6 +192,8 @@ go build -o ./mephisto ./cmd/mephisto
 　　（书斋震颤，书架上的书脊同时发出天鹅咽气般的悲鸣。梅菲斯特的衣袍化作无数蛆虫，又重组为人类形态。）
 ```
 
+</details>
+
 ---
 
 ## 🎭 多分支故事线
@@ -185,16 +202,16 @@ go build -o ./mephisto ./cmd/mephisto
 
 ```bash
 # 默认子版（相当于"主线"）
-./mephisto run data/sample.meph
+./mephisto run data/faust.meph
 
 # 指定分支
-./mephisto run data/sample.meph -branch dark
+./mephisto run data/faust.meph --branch dark
 
 # 忽略子版，从母版重新开始
-./mephisto run data/sample.meph -reset
+./mephisto run data/faust.meph --reset
 
 # 组合使用
-./mephisto run data/sample.meph -reset -branch dark
+./mephisto run data/faust.meph --reset --branch dark
 ```
 
 ---
@@ -214,30 +231,43 @@ go build -o ./mephisto ./cmd/mephisto
 
 ## 🛠️ 命令行选项
 
+<details>
+<summary>📖 查看完整命令行选项</summary>
+
 ```bash
 ./mephisto <子命令> [选项] <文件>
+./mephisto <文件>                    # 简写，等价于 parse
 
 子命令:
-  init  [模板名]                 生成示例契约文件（默认 sample.meph）
+  init  [模板名]                 生成示例契约文件（faust / dantes，默认 faust）
   parse <文件> [选项]           解析 .meph 契约，输出 JSON
   run   <文件> [选项]           启动交互式对话模式
   version                       显示版本信息
   help                          显示此帮助信息
 
+约定:
+  -<字母>                       短选项（如 -b、-o、-q）
+  --<单词>                      长选项（如 --branch、--output）
+                                长选项必须使用双横线
+
+通用选项:
+  -h, --help                    显示帮助信息
+
 parse 选项:
-  -o <路径>                     输出到文件（默认输出到 stdout）
-  -q                            静默模式，只输出错误
+  -o, --output <路径>           输出到文件（默认输出到 stdout）
+  -q, --quiet                   静默模式，只输出错误
 
 run 选项:
-  -branch <分支名>              分支名（用于多分支故事线）
-  -reset                        忽略子版存档，从母版重新开始
-  -debug                        启用规则调试模式
-  -client <类型>                LLM 客户端: deepseek/openai/ollama
-  -model <模型名>               模型名称
-  -api-key <密钥>               API 密钥
-  -base-url <URL>               API 基础 URL
-  -constraints <文件>           自定义输出约束文件（默认使用内置约束）
-  -max-tokens <N>               最大生成 Token 数（默认 4096）
+  -b, --branch <分支名>         分支名（用于多分支故事线）
+  -r, --reset                   忽略子版存档，从母版重新开始
+  -d, --debug                   启用规则调试模式
+  -c, --client <类型>           LLM 客户端: openai（OpenAI 兼容，含 DeepSeek）/ollama
+  -m, --model <模型名>          模型名称
+      --api-key <密钥>          API 密钥
+      --base-url <URL>          API 基础 URL
+      --constraints <文件>      自定义输出约束文件（默认使用内置约束）
+      --max-tokens <N>          最大生成 Token 数（默认 4096）
+  -q, --quiet                   静默模式
 
 交互模式命令:
   /state                       显示当前状态
@@ -250,11 +280,14 @@ run 选项:
   OPENAI_API_KEY                API 密钥（优先级低于命令行）
   OPENAI_BASE_URL               API 基础 URL
   MEPHISTO_MODEL                模型名称
-  MEPHISTO_CLIENT               客户端类型（deepseek/openai/ollama）
+  MEPHISTO_CLIENT               客户端类型（openai/ollama，DeepSeek 通过 BaseURL 使用 openai 客户端）
   MEPHISTO_BRANCH               默认分支名
   MEPHISTO_DEBUG                启用调试模式
   MEPHISTO_RESET                忽略子版存档
+  MEPHISTO_QUIET                静默模式
 ```
+
+</details>
 
 ---
 
@@ -309,18 +342,3 @@ mephisto/
 ## 📄 License
 
 MIT
-
----
-
-## ☕ 赞助支持
-
-如果你觉得 Mephisto 对你有所帮助，欢迎请我喝杯咖啡 ☕  
-每一份支持都会让这个项目走得更远。
-
-<details>
-<summary>点击展开收款码</summary>
-
-<img src="./assets/ali-pay.jpg" width="200" height="280" alt="支付宝收款码" />
-<img src="./assets/wechat-pay.jpg" width="200" height="280" alt="微信收款码" />
-
-</details>
