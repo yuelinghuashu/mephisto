@@ -17,6 +17,14 @@
   <a href="./README.en.md"><img src="https://img.shields.io/badge/lang-en-red" alt="English"></a>
 </p>
 
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-Linux%20|%20macOS%20|%20Windows-lightgrey" alt="Platform">
+  <img src="https://img.shields.io/badge/LLM-OpenAI%20|%20DeepSeek%20|%20Ollama-purple" alt="LLM">
+  <img src="https://img.shields.io/badge/.meph%20DSL-8B8BD8" alt="DSL">
+  <img src="https://img.shields.io/badge/Interactive%20Fiction-ff69b4" alt="Interactive Fiction">
+  <img src="https://img.shields.io/badge/Build-Passing-brightgreen" alt="Build">
+</p>
+
 ---
 
 ## 📌 项目定位
