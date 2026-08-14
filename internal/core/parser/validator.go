@@ -44,8 +44,30 @@ var dslKeywordFixPatterns = []struct {
 // spacedComparisonPattern 匹配「两个比较字符间含空白」的正则（如 `> =`、`= =`、`! =`）。
 var spacedComparisonPattern = regexp.MustCompile(`[<>=!]\s+[<>=!]`)
 
-// spacedCompoundOperatorPattern 匹配「复合赋值符号与等号间含空白」的正则（如 `+ =`、`- =`）。
-var spacedCompoundOperatorPattern = regexp.MustCompile(`[+\-*/]\s+=`)
+// spacedCompoundOperatorBasePattern 匹配「复合赋值符号与等号间含空白」的正则基础（如 `+ =`、`- =`）。
+// RE2 不支持 lookahead，因此「排除 ==」的逻辑由 hasSpacedCompoundOperator 手动完成。
+var spacedCompoundOperatorBasePattern = regexp.MustCompile(`[+\-*/]\s+=`)
+
+// hasSpacedCompoundOperator 检测「复合赋值符号与等号间含空白」的模式（如 `状态.x + = 5`）。
+//
+// 对齐 Flutter meph_dsl.dart 的 spacedCompoundOperatorPattern `[+\-*/]\s+=(?!=)`：
+// Flutter 用 lookahead 排除等号后紧跟另一个等号的场景（如 `==`），
+// Go RE2 不支持 lookahead，此处手动检查匹配末尾的下一个字符。
+func hasSpacedCompoundOperator(s string) bool {
+	for len(s) > 0 {
+		loc := spacedCompoundOperatorBasePattern.FindStringIndex(s)
+		if loc == nil {
+			return false
+		}
+		end := loc[1]
+		// 等号后紧跟另一个等号（==）时不视为复合运算符空格
+		if end >= len(s) || s[end] != '=' {
+			return true
+		}
+		s = s[end:]
+	}
+	return false
+}
 
 // rollSpacePattern 匹配 roll 与左括号间的空白（如 `roll (1d100)`）。
 var rollSpacePattern = regexp.MustCompile(`roll\s+\(`)
@@ -124,7 +146,7 @@ func validateOperatorSpacing(action string, lineNumber int, blockName string) er
 		if !strings.HasPrefix(trimmed, "状态.") {
 			continue
 		}
-		if spacedCompoundOperatorPattern.MatchString(trimmed) {
+		if hasSpacedCompoundOperator(trimmed) {
 			return &shared.ParseError{
 				Line:      lineNumber,
 				BlockName: blockName,

@@ -361,16 +361,19 @@ func evalStateCondition(cond string, state map[string]any) bool {
 	rest = strings.TrimSpace(rest)
 
 	// 查找操作符（优先匹配多字符；复用公共常量避免重复定义）
+	//
+	// 修复：之前用 strings.Index 按序查找，如果值字符串中也包含操作符字符
+	// （如 `状态.情绪 == "a>b"`），会先在错误位置命中 `>`。现在统一取
+	// 所有操作符中最靠左的匹配位置，避免值内容干扰操作符定位。
 	var op string
-	var idx int
+	var idx = -1
 	for _, o := range comparisonOperators {
-		if i := strings.Index(rest, o); i != -1 {
+		if i := strings.Index(rest, o); i != -1 && (idx == -1 || i < idx) {
 			op = o
 			idx = i
-			break
 		}
 	}
-	if op == "" {
+	if op == "" || idx == -1 {
 		return false
 	}
 
@@ -404,8 +407,15 @@ func equalValue(a any, b string) bool {
 	case string:
 		return v == domain.Unquote(b)
 	case bool:
-		if bv, err := strconv.ParseBool(b); err == nil {
-			return v == bv
+		// 只接受 "true" / "false"（大小写不敏感），与 ParseStateValue 对齐。
+		// 修复：之前用 strconv.ParseBool 会把 "1"/"0"/"t"/"f" 也当作布尔，
+		// 导致状态条件 `== "1"` 与赋值 `= "1"` 类型不一致。
+		lower := strings.ToLower(strings.TrimSpace(b))
+		if lower == "true" {
+			return v
+		}
+		if lower == "false" {
+			return !v
 		}
 		return false
 	default:

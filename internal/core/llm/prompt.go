@@ -126,7 +126,7 @@ func RenderPrompt(tmpl PromptTemplate) string {
 	sb.WriteString(tmpl.Worldview)
 	sb.WriteString("\n\n")
 
-	sb.WriteString("【角色】\n")
+	sb.WriteString("【角色名】\n")
 	fmt.Fprintf(&sb, "你是 %s", tmpl.RoleName)
 	if len(tmpl.Anchor) > 0 {
 		style := extractStyle(tmpl.Anchor)

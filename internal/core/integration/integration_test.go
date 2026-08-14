@@ -23,6 +23,7 @@ import (
 
 	"mephisto/internal/core/engine"
 	"mephisto/internal/core/parser"
+	"mephisto/internal/domain"
 )
 
 // testContractPath 返回集成测试用的 .meph 文件路径。
@@ -38,41 +39,49 @@ func TestFullIntegration(t *testing.T) {
 		t.Fatalf("解析 .meph 文件失败: %v", err)
 	}
 
-	// 契约灼痛规则（包含 "契约" 或 "誓约" → 注入 + 状态修改，必定匹配）
-	t.Run("触发契约灼痛", func(t *testing.T) {
+	// 情绪流转规则（状态机：包含"满足" → 状态.情绪 = "满足"）
+	t.Run("触发情绪流转", func(t *testing.T) {
 		eng := engine.New(contract)
-		if _, err := eng.Run("契约已经签下", nil); err != nil {
+		if _, err := eng.Run("我感到了真正的满足", nil); err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
-		memories := eng.Memories()
-		found := false
-		for _, m := range memories {
-			if strings.Contains(m, "契约书在桌上微微发烫") {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("契约灼痛规则未触发，memories = %v", memories)
+		state := eng.State()
+		if state["情绪"] != "满足" {
+			t.Errorf("情绪 = %v, want 满足", state["情绪"])
 		}
 	})
 
-	// 深渊规则（括号分组：包含 "深渊" && (包含 "凝视" || 包含 "回望")）
-	t.Run("触发深渊括号分组", func(t *testing.T) {
-		eng := engine.New(contract)
-		if _, err := eng.Run("深渊在凝视我", nil); err != nil {
-			t.Fatalf("Run() error = %v", err)
-		}
-		memories := eng.Memories()
-		found := false
-		for _, m := range memories {
-			if strings.Contains(m, "深渊也在回望他") {
-				found = true
-				break
+	// 灵魂维系规则（状态机：灵魂完整度 <= 25 → 重置为 30）
+	t.Run("触发灵魂维系", func(t *testing.T) {
+		// 修改契约初始状态：灵魂完整度设为 20（触发灵魂维系条件）
+		modified := *contract // 浅拷贝避免影响其他子测试
+		modified.State = make([]domain.StateItem, len(contract.State))
+		for i, item := range contract.State {
+			modified.State[i] = item
+			if item.Key == "灵魂完整度" {
+				modified.State[i] = domain.StateItem{Key: "灵魂完整度", Value: domain.ParseStateValue("20")}
 			}
 		}
-		if !found {
-			t.Errorf("深渊规则未触发，memories = %v", memories)
+		eng := engine.New(&modified)
+		if _, err := eng.Run("你好", nil); err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+		state := eng.State()
+		if state["灵魂完整度"] != 30 {
+			t.Errorf("灵魂完整度 = %v, want 30", state["灵魂完整度"])
+		}
+	})
+
+	// 命运骰规则（骰子判定：包含"赌" && roll(1d100) >= 70 → 灵魂完整度 += 10）
+	t.Run("触发命运骰", func(t *testing.T) {
+		eng := engine.New(contract)
+		if _, err := eng.Run("我要赌一把", nil); err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+		// 骰子结果随机，灵魂完整度应为 100（未触发）或 110（触发 +10）
+		state := eng.State()
+		if val, ok := state["灵魂完整度"]; !ok || (val != 100 && val != 110) {
+			t.Errorf("灵魂完整度 = %v, want 100 或 110（骰子成功时）", val)
 		}
 	})
 
@@ -83,8 +92,46 @@ func TestFullIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
-		if !strings.Contains(response, "一声轻笑") {
-			t.Errorf("Run() response = %v, want contain 一声轻笑", response)
+		if !strings.Contains(response, "梅菲斯特靠近{角色名}") {
+			t.Errorf("Run() response = %v, want contain 梅菲斯特靠近{角色名}", response)
+		}
+	})
+
+	// 烛火映心规则（括号分组 + 互斥组：位置==书斋 && (包含"光明" || 包含"烛火") → +5）
+	t.Run("触发烛火映心", func(t *testing.T) {
+		eng := engine.New(contract)
+		if _, err := eng.Run("烛火摇曳", nil); err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+		state := eng.State()
+		if state["灵魂完整度"] != 105 {
+			t.Errorf("灵魂完整度 = %v, want 105（初始100 + 5）", state["灵魂完整度"])
+		}
+	})
+
+	// 说出停留 + 灵魂归主（状态机终局：情绪==满足 && 包含"停留" → 注入 + 情绪=终局）
+	t.Run("触发状态机终局", func(t *testing.T) {
+		eng := engine.New(contract)
+		// 第一步：触发情绪流转设置情绪为"满足"
+		eng.Run("我感到了真正的满足", nil)
+		// 第二步：状态.情绪 == "满足" && 包含"停留"
+		if _, err := eng.Run("请你停留一下", nil); err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+		state := eng.State()
+		if state["情绪"] != "终局" {
+			t.Errorf("情绪 = %v, want 终局", state["情绪"])
+		}
+		memories := eng.Memories()
+		found := false
+		for _, m := range memories {
+			if strings.Contains(m, "契约已成") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("[说出停留] 注入未触发，memories = %v", memories)
 		}
 	})
 
@@ -153,73 +200,116 @@ func TestIntegrationStatePersistence(t *testing.T) {
 		t.Errorf("初始灵魂完整度 = %v (%T), want 100", val, val)
 	}
 
-	// 使用包含"契约"的输入来触发契约灼痛规则（注入类型）
-	_, err = eng.Run("契约不该被打破", nil)
+	// 使用包含"满足"的输入来触发情绪流转规则（状态修改类型）
+	_, err = eng.Run("我感到了心满意足", nil)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 
-	// 触发规则后应产生记忆（注入规则会追加记忆）
-	memories := eng.Memories()
-	if len(memories) == 0 {
-		t.Error("期望有记忆产生，但为空")
+	// 验证状态持久化：情绪已从"永不满足"变为"满足"
+	state = eng.State()
+	if state["情绪"] != "满足" {
+		t.Errorf("情绪 = %v, want 满足", state["情绪"])
 	}
 }
 
-// TestIntegrationDantesTemplate 验证 dantes 模板中的括号分组规则能正确触发。
+// TestIntegrationDantesTemplate 验证 dantes 模板中的规则能正确触发。
 //
-// dantes.meph 使用了括号分组语法（如 `状态.警惕度 >= 70 && (包含 "风暴" || 包含 "浪")`），
-// 此测试确保括号分组被正确编译为 AST 并执行。
+// dantes.meph 使用了状态机（复仇之火/交锋）、骰子（棋局）、互斥组（终局抉择）、
+// 终局注入（天平方正）等 DSL 特性，此测试确保这些规则被正确编译为 AST 并执行。
 func TestIntegrationDantesTemplate(t *testing.T) {
 	contract, err := parser.ParseFile("../../../data/dantes.meph")
 	if err != nil {
 		t.Fatalf("解析 dantes.meph 失败: %v", err)
 	}
 
-	// 触发现有规则（最简单的注入规则）
-	t.Run("触发归航规则", func(t *testing.T) {
+	// 复仇之火（状态机：提及仇人唤醒仇恨）
+	t.Run("触发复仇之火", func(t *testing.T) {
 		eng := engine.New(contract)
-		_, err := eng.Run("我看见了码头！", nil)
-		if err != nil {
+		if _, err := eng.Run("我看到了唐格拉尔", nil); err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
-		memories := eng.Memories()
-		found := false
-		for _, m := range memories {
-			if strings.Contains(m, "阳光落在甲板上") {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("归航规则未触发，memories = %v", memories)
+		state := eng.State()
+		if val, ok := state["仇恨"]; !ok || (val != 85 && val != 95) {
+			t.Errorf("仇恨 = %v, want 85 或 95（棋局可能叠加触发）", val)
 		}
 	})
 
-	// 触发括号分组规则：状态.警惕度 >= 70 && (包含 "风暴" || 包含 "浪")
-	t.Run("触发括号分组规则", func(t *testing.T) {
+	// 交锋（状态机：正面周旋积累谋划）
+	t.Run("触发交锋", func(t *testing.T) {
 		eng := engine.New(contract)
-		// 提高警惕度以匹配 >= 70
-		eng.Run("政治的风声很紧", nil)  // 触发风声规则：警惕度 += 15
-		eng.Run("政治局势紧张", nil)   // 再提升
-		eng.Run("政治暗流涌动", nil)   // 再提升
-		eng.Run("政治局势日益紧张", nil) // 再提升（警惕度已 >= 70）
+		if _, err := eng.Run("让我来试探他", nil); err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+		state := eng.State()
+		if state["谋划"] != 75 {
+			t.Errorf("谋划 = %v, want 75（初始70 + 5）", state["谋划"])
+		}
+	})
 
-		// 现在触发带括号的条件
-		_, err := eng.Run("我看到浪来了！", nil)
-		if err != nil {
+	// 棋局（骰子 + 状态条件：谋划 >= 60 时骰子判定）
+	t.Run("触发布局棋局", func(t *testing.T) {
+		eng := engine.New(contract)
+		// 初始谋划 = 70 >= 60，触发 [棋局]：roll(1d100) >= 50
+		if _, err := eng.Run("我的布局已定", nil); err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+		// 骰子结果随机：仇恨应为 80（未触发）或 90（触发 +10）
+		state := eng.State()
+		if val, ok := state["仇恨"]; !ok || (val != 80 && val != 90) {
+			t.Errorf("仇恨 = %v, want 80 或 90（骰子成功时）", val)
+		}
+	})
+
+	// 代价（状态机：宽恕萌芽）
+	t.Run("触发代价", func(t *testing.T) {
+		eng := engine.New(contract)
+		if _, err := eng.Run("我看到了无辜的梅尔塞苔丝", nil); err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+		state := eng.State()
+		if state["宽恕"] != 10 {
+			t.Errorf("宽恕 = %v, want 10（初始0 + 10）", state["宽恕"])
+		}
+	})
+
+	// 终局抉择（互斥组：放下 vs 毁灭）
+	t.Run("触发放下", func(t *testing.T) {
+		eng := engine.New(contract)
+		if _, err := eng.Run("我选择放下仇恨", nil); err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+		state := eng.State()
+		if val, ok := state["仇恨"]; !ok || (val != 60 && val != 70) {
+			t.Errorf("仇恨 = %v, want 60 或 70（棋局可能叠加触发）", val)
+		}
+	})
+
+	// 天平方正（终局注入：仇恨 >= 100 时触发）
+	t.Run("触发天平方正", func(t *testing.T) {
+		// 通过修改契约初始状态将仇恨设为 100
+		modified := *contract
+		modified.State = make([]domain.StateItem, len(contract.State))
+		for i, item := range contract.State {
+			modified.State[i] = item
+			if item.Key == "仇恨" {
+				modified.State[i] = domain.StateItem{Key: "仇恨", Value: domain.ParseStateValue("100")}
+			}
+		}
+		eng := engine.New(&modified)
+		if _, err := eng.Run("审判的时刻到了", nil); err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
 		memories := eng.Memories()
 		found := false
 		for _, m := range memories {
-			if strings.Contains(m, "暴风来临前的第一丝征兆") {
+			if strings.Contains(m, "执掌天平与利剑的审判者") {
 				found = true
 				break
 			}
 		}
 		if !found {
-			t.Errorf("括号分组规则（风暴警觉）未触发，memories = %v", memories)
+			t.Errorf("天平方正规则未触发，memories = %v", memories)
 		}
 	})
 }

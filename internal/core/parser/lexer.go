@@ -14,9 +14,9 @@
 //   - 未知区块（如【草稿】【设定集】）同样切分但标记 IsKnown=false。
 //   - 解析层会静默忽略未知区块，方便用户书写备忘/草稿，不会报错。
 //
-// 已知区块白名单仅包含 9 个标准区块。先前通过环境变量
-// MEPHISTO_EXTRA_BLOCKS 扩展白名单的机制已移除 —— 草稿宽容策略下，
-// 未知区块被自动宽容接受，无需再通过环境变量注册。
+// 已知区块白名单包含 9 个标准区块 + 1 个系统保留区块（@命运，对齐 Flutter）。
+// 先前通过环境变量 MEPHISTO_EXTRA_BLOCKS 扩展白名单的机制已移除 ——
+// 草稿宽容策略下，未知区块被自动宽容接受，无需再通过环境变量注册。
 package parser
 
 import (
@@ -61,11 +61,11 @@ type Block struct {
 	IsKnown bool
 }
 
-// knownBlocks 是已知区块名的静态白名单。
+// knownBlocks 是已知区块名的静态白名单（对齐 Flutter meph_lexer.dart）。
 //
-// 基础白名单包含 9 个标准区块：
+// 基础白名单包含 9 个标准区块 + 1 个系统保留区块：
 //
-//	角色名、锚点、世界观、角色背景、开局场景、状态、规则、记忆、历史
+//	角色名、锚点、世界观、角色背景、开局场景、状态、规则、记忆、历史、@命运
 var knownBlocks = map[string]bool{
 	"角色名":  true,
 	"锚点":   true,
@@ -76,6 +76,7 @@ var knownBlocks = map[string]bool{
 	"规则":   true,
 	"记忆":   true,
 	"历史":   true,
+	"@命运":  true,
 }
 
 // isKnownBlock 检查区块名是否在白名单中。
@@ -220,30 +221,42 @@ func Lex(text string) ([]Block, error) {
 	return blocks, nil
 }
 
-// blockTitle 检查一行是否为区块标题（【标题】 格式）。
+// blockTitle 检查一行是否为区块标题（与 Flutter meph_lexer.dart 的 blockTitle 对齐）。
+//
+// 支持两种形式：
+//   - 用户区块：【标题】（如【角色名】）
+//   - 系统保留区块：@标题（如 @命运），独立成行
+//
+// `@` 前缀是「系统生成元数据」命名空间，与用户 `【】` 区块天然区分。
 //
 // 输入：一行原始文本（可能包含首尾空白）
-// 输出：区块标题（如 "角色名"）和一个布尔值表示是否匹配。
+// 输出：区块标题（如 "角色名"、"@命运"）和一个布尔值表示是否匹配。
 //
 // 校验规则：
-//  1. 去除首尾空白后，必须以 【 开头，以 】 结尾。
-//  2. 提取 【 和 】 之间的内容，去除首尾空白。
+//  1. 去除首尾空白后，必须以 【 开头，以 】 结尾；或以 @ 开头独立成行。
+//  2. 提取标题内容，去除首尾空白。
 //  3. 标题不能为空字符串。
 //
-// 与 Flutter meph_lexer.dart 的 blockTitle 对齐：
 // 不要求标题在白名单中，未知区块作为草稿宽容接受（IsKnown=false 供解析层判断）。
 func blockTitle(line string) (string, bool) {
 	trimmed := strings.TrimSpace(line)
 
-	// 必须以 【 开头，以 】 结尾
+	// 系统保留区块：@xxx 独立成行
+	if strings.HasPrefix(trimmed, "@") {
+		title := strings.TrimSpace(strings.TrimPrefix(trimmed, "@"))
+		if title == "" {
+			return "", false
+		}
+		return "@" + title, true
+	}
+
+	// 用户区块：【标题】
 	if !strings.HasPrefix(trimmed, "【") || !strings.HasSuffix(trimmed, "】") {
 		return "", false
 	}
 
 	// 提取区块标题
-	title := strings.TrimPrefix(trimmed, "【")
-	title = strings.TrimSuffix(title, "】")
-	title = strings.TrimSpace(title)
+	title := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(trimmed, "【"), "】"))
 
 	if title == "" {
 		return "", false

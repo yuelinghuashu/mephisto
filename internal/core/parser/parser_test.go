@@ -216,6 +216,154 @@ func TestParseErrors(t *testing.T) {
 }
 
 // ============================================================
+// 系统保留区块测试（@命运，对齐 Flutter）
+// ============================================================
+
+// TestParseBranchTitle 验证 @命运 区块解析到 BranchTitle（对齐 Flutter）。
+func TestParseBranchTitle(t *testing.T) {
+	input := `@命运
+理想国 / 乌托邦线
+
+【角色名】
+浮士德
+`
+	contract, err := ParseString(input)
+	if err != nil {
+		t.Fatalf("ParseString() error = %v", err)
+	}
+	if contract.BranchTitle != "理想国 / 乌托邦线" {
+		t.Errorf("BranchTitle = %q, want %q", contract.BranchTitle, "理想国 / 乌托邦线")
+	}
+	if contract.RoleName != "浮士德" {
+		t.Errorf("RoleName = %q, want %q", contract.RoleName, "浮士德")
+	}
+}
+
+// TestParseBranchTitleEmpty 验证 @命运 无内容时 BranchTitle 为空字符串。
+func TestParseBranchTitleEmpty(t *testing.T) {
+	input := `@命运
+
+【角色名】
+浮士德
+`
+	contract, err := ParseString(input)
+	if err != nil {
+		t.Fatalf("ParseString() error = %v", err)
+	}
+	if contract.BranchTitle != "" {
+		t.Errorf("BranchTitle = %q, want empty", contract.BranchTitle)
+	}
+}
+
+// TestLexSystemBlock 验证 Lex 识别 @ 前缀系统区块（对齐 Flutter meph_lexer.dart）。
+func TestLexSystemBlock(t *testing.T) {
+	blocks, err := Lex("@命运\n测试命运\n\n【角色名】\n浮士德\n")
+	if err != nil {
+		t.Fatalf("Lex() error = %v", err)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("Block count = %d, want 2", len(blocks))
+	}
+	if blocks[0].Title != "@命运" {
+		t.Errorf("blocks[0].Title = %q, want %q", blocks[0].Title, "@命运")
+	}
+	if !blocks[0].IsKnown {
+		t.Error("blocks[0].IsKnown = false, want true (@命运 应在白名单中)")
+	}
+	if len(blocks[0].Content) != 2 || blocks[0].Content[0].Text != "测试命运" {
+		t.Errorf("blocks[0].Content = %+v, want [测试命运 空行]", blocks[0].Content)
+	}
+	if blocks[1].Title != "角色名" {
+		t.Errorf("blocks[1].Title = %q, want %q", blocks[1].Title, "角色名")
+	}
+}
+
+// ============================================================
+// 复合运算符空格校验测试（对齐 Flutter）
+// ============================================================
+
+// TestHasSpacedCompoundOperator 验证复合运算符空格检测（排除 ==，对齐 Flutter）。
+func TestHasSpacedCompoundOperator(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{"+  = 检测", "状态.x + = 5", true},
+		{"-  = 检测", "状态.x - = 5", true},
+		{"*  = 检测", "状态.x * = 5", true},
+		{"/  = 检测", "状态.x / = 5", true},
+		{"== 不误报", "状态.x == 5", false},
+		{"+= 不误报", "状态.x += 5", false},
+		{"-= 不误报", "状态.x -= 5", false},
+		{"普通赋值不误报", "状态.x = 5", false},
+		{"复合动作中检测", `注入 "a" && 状态.x + = 5`, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := hasSpacedCompoundOperator(tt.input)
+			if got != tt.want {
+				t.Errorf("hasSpacedCompoundOperator(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestParseRuleLineCompactOperator 验证合法比较运算符不误报（对齐 Flutter 的护展）。
+func TestParseRuleLineCompactOperator(t *testing.T) {
+	input := `【角色名】
+测试
+
+【规则】
+[合法1] if 状态.x == "值" -> 注入 "a"
+[合法2] if 状态.y != 5 -> 注入 "b"
+[合法3] if 状态.z >= 10 && 包含 "x" -> 状态.z = 10
+`
+	contract, err := ParseString(input)
+	if err != nil {
+		t.Fatalf("ParseString() error = %v", err)
+	}
+	if len(contract.Rules) != 3 {
+		t.Errorf("Rules length = %d, want 3（合法比较算子不应误报）", len(contract.Rules))
+	}
+}
+
+// ============================================================
+// 记忆权重前缀测试（方案 B：仅提取内容，不保存权重）
+// ============================================================
+
+// TestParseMemoryWeightPrefix 验证带 [权重] 前缀的记忆条目只提取内容（对齐 Flutter）。
+func TestParseMemoryWeightPrefix(t *testing.T) {
+	input := `【角色名】
+测试
+
+【记忆】
+- [4] 浮士德与梅菲斯特立下赌约
+- [2] 浮士德在书斋研读古卷
+- 无前缀旧格式记忆
+`
+	contract, err := ParseString(input)
+	if err != nil {
+		t.Fatalf("ParseString() error = %v", err)
+	}
+	if len(contract.Memories) != 3 {
+		t.Fatalf("Memories length = %d, want 3", len(contract.Memories))
+	}
+	// 带 [权重] 前缀 → 提取 ] 后的内容（方案 B 不保存权重）
+	if contract.Memories[0] != "浮士德与梅菲斯特立下赌约" {
+		t.Errorf("Memories[0] = %q, want %q", contract.Memories[0], "浮士德与梅菲斯特立下赌约")
+	}
+	if contract.Memories[1] != "浮士德在书斋研读古卷" {
+		t.Errorf("Memories[1] = %q, want %q", contract.Memories[1], "浮士德在书斋研读古卷")
+	}
+	// 无前缀 → 原样保留
+	if contract.Memories[2] != "无前缀旧格式记忆" {
+		t.Errorf("Memories[2] = %q, want %q", contract.Memories[2], "无前缀旧格式记忆")
+	}
+}
+
+// ============================================================
 // 单元测试：公共解析函数
 // ============================================================
 

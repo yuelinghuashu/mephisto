@@ -102,9 +102,9 @@ func executeCompoundAction(action, input string, runtime *Runtime, llmClient llm
 // executeInject 执行注入动作。
 func executeInject(action string, runtime *Runtime) string {
 	msg := domain.Unquote(strings.TrimPrefix(action, actionInjectPrefix))
-	msg = shared.ReplacePlaceholders(msg, map[string]string{
-		"角色名": runtime.Contract().RoleName,
-	})
+	// 完整占位符替换：{角色名} + 所有状态键（与 save.go 的序列化对齐）
+	// 修复：之前只替换 {角色名}，未替换 {状态键} 等动态状态占位符
+	msg = shared.ReplacePlaceholders(msg, shared.BuildPlaceholderVars(runtime.Contract().RoleName, runtime.State()))
 	runtime.AppendMemory(msg)
 	return ""
 }
@@ -156,10 +156,9 @@ func setState(action string, runtime *Runtime, onChunk func(string)) string {
 		key, valStr = strings.TrimSpace(key), strings.TrimSpace(valStr)
 	}
 
-	// 去除字符串值的引号
-	if strings.HasPrefix(valStr, `"`) && strings.HasSuffix(valStr, `"`) {
-		valStr = valStr[1 : len(valStr)-1]
-	}
+	// 去除字符串值的引号（单双引号均支持，与 domain.Unquote 对齐）
+	// 修复：之前只处理双引号，单引号会原样传递给 ParseValue 导致类型推断错误
+	valStr = domain.Unquote(valStr)
 
 	val := shared.ParseValue(valStr)
 

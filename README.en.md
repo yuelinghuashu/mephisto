@@ -31,11 +31,11 @@
 
 > ⚠️ **Transitional Version Notice**
 
-**This repository (CLI edition) is the Go command-line transitional version of Mephisto.**
+**This repository (CLI edition) is the Go command-line transitional product of Mephisto, serving as the predecessor to the [Flutter edition](https://github.com/yuelinghuashu/mephisto-gui).**
 
-- 🎯 **Primary version**: [Mephisto Flutter edition](https://github.com/yuelinghuashu/mephisto-gui) — a cross-platform GUI app (Windows / macOS / Linux / Android / iOS) with a complete graphical narrative experience (in-app editor, rule hot-reload, custom style rules, multi-platform contract storage). It is the **primary development target**.
-- ⏳ **Transitional role**: The CLI edition is used to quickly validate the core engine logic and command-line usage scenarios. Once its features are aligned with the Flutter edition, the CLI edition will **enter maintenance mode** (bug fixes and change synchronization only) and will not introduce major feature changes.
-- 🔗 **Compatibility**: Both editions share the same `.meph` contract syntax and narrative engine design; contract files are fully compatible.
+- 🎯 **Primary version**: [Mephisto Flutter edition](https://github.com/yuelinghuashu/mephisto-gui) — a cross-platform GUI app (Windows / macOS / Linux / Android / iOS) with a complete graphical narrative experience (in-app editor, rule hot-reload, custom style rules, multi-platform contract storage). It is the **primary development target**. The CLI edition is its predecessor, built to validate the core engine logic.
+- ⏳ **Maintenance policy**: The CLI edition **does not pursue full parser/feature parity** with the Flutter edition. It exists to validate core engine logic and command-line usage scenarios. Unless a critical bug is found, no significant development effort will be invested in this repository.
+- 🔗 **Compatibility**: Both editions share the same `.meph` contract syntax and narrative engine design; contract files are fully compatible. The Flutter edition is the authoritative source for syntax standards.
 
 ---
 

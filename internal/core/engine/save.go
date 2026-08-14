@@ -24,6 +24,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"mephisto/internal/core/parser"
@@ -147,9 +149,9 @@ func LoadChild(filename, branch string) (*ChildData, error) {
 
 // buildChildContentWithRules 构建子版文件内容，可指定规则来源。
 //
-// 输出格式与 .meph 契约文件完全一致，包含 9 个标准区块：
+// 输出格式与 .meph 契约文件完全一致，包含 9 个标准区块 + 1 个系统保留区块：
 //
-//	角色名、锚点、世界观、角色背景、开局场景、状态、规则、记忆、历史
+//	@命运（可选）、角色名、锚点、世界观、角色背景、开局场景、状态、规则、记忆、历史
 //
 // 变量替换策略：
 //   - 替换：锚点、世界观、角色背景、开局场景、规则动作
@@ -167,6 +169,11 @@ func (e *Engine) buildChildContentWithRules(rules []*domain.Rule) string {
 
 	// 构建变量映射（用于占位符替换）
 	vars := shared.BuildPlaceholderVars(contract.RoleName, state)
+
+	// ---- 0. @命运 系统门面区块（若有，置于文件最顶部，与 Flutter serializer 对齐）----
+	if contract.BranchTitle != "" {
+		fmt.Fprintf(&sb, "@命运\n%s\n\n", contract.BranchTitle)
+	}
 
 	// ---- 1. 角色名（不替换） ----
 	fmt.Fprintf(&sb, "【角色名】\n%s\n\n", contract.RoleName)
@@ -221,7 +228,7 @@ func (e *Engine) buildChildContentWithRules(rules []*domain.Rule) string {
 
 		fmt.Fprint(&sb, "【状态】\n")
 		for _, kv := range stateKVs {
-			fmt.Fprintf(&sb, "- %s: %v\n", kv.Key, kv.Value)
+			fmt.Fprintf(&sb, "- %s: %s\n", kv.Key, formatStateValue(kv.Value))
 		}
 		fmt.Fprint(&sb, "\n")
 	}
@@ -240,11 +247,11 @@ func (e *Engine) buildChildContentWithRules(rules []*domain.Rule) string {
 		fmt.Fprint(&sb, "\n")
 	}
 
-	// ---- 8. 记忆（不替换，直接存储） ----
+	// ---- 8. 记忆（不替换，直接存储；保留/补齐 [权重] 前缀，与 Flutter 对齐） ----
 	if len(memories) > 0 {
 		fmt.Fprint(&sb, "【记忆】\n")
 		for _, mem := range memories {
-			fmt.Fprintf(&sb, "- %s\n", mem)
+			fmt.Fprintf(&sb, "- %s\n", withMemoryWeightPrefix(mem))
 		}
 		fmt.Fprint(&sb, "\n")
 	}
@@ -260,6 +267,44 @@ func (e *Engine) buildChildContentWithRules(rules []*domain.Rule) string {
 	}
 
 	return sb.String()
+}
+
+// ============================================================
+// 辅助函数
+// ============================================================
+
+// formatStateValue 将状态值格式化为 .meph 文本（与 Flutter meph_serializer.dart 的 _formatStateValue 对齐）：
+//   - 字符串带引号（避免被解析为数字/布尔）
+//   - 数字/布尔直接输出
+func formatStateValue(v domain.StateValue) string {
+	switch t := v.Raw().(type) {
+	case string:
+		// 字符串值加双引号（与 Flutter serializer 对齐）
+		escaped := strings.ReplaceAll(t, `"`, `\"`)
+		return `"` + escaped + `"`
+	case int:
+		return strconv.Itoa(t)
+	case float64:
+		return strconv.FormatFloat(t, 'f', -1, 64)
+	case bool:
+		return strconv.FormatBool(t)
+	default:
+		return fmt.Sprintf("%v", v.Raw())
+	}
+}
+
+// memoryWeightPattern 匹配记忆条目开头的 `[权重] ` 前缀（如 `[4] `）。
+var memoryWeightPattern = regexp.MustCompile(`^\[\d\]\s`)
+
+// withMemoryWeightPrefix 确保记忆条目带 `[权重] ` 前缀（与 Flutter serializer 对齐）。
+//
+// - 已有 `[权重] ` 前缀：原样返回（保留原始权重，方案 B 不改写）
+// - 无前缀的旧格式记忆：补齐默认权重 `[3] `（与 Flutter 的 Memory.defaultImportance=3 对齐）
+func withMemoryWeightPrefix(mem string) string {
+	if memoryWeightPattern.MatchString(mem) {
+		return mem
+	}
+	return "[3] " + mem
 }
 
 // ============================================================

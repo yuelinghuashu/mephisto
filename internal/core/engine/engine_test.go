@@ -795,6 +795,96 @@ func TestBuildChildPath(t *testing.T) {
 	}
 }
 
+// TestBuildChildContentBranchTitle 验证 @命运 区块被序列化在文件最顶部（对齐 Flutter）。
+func TestBuildChildContentBranchTitle(t *testing.T) {
+	contract := &domain.Contract{
+		RoleName:    "浮士德",
+		BranchTitle: "理想国 / 乌托邦线",
+		State:       []domain.StateItem{},
+		Rules:       []*domain.Rule{},
+	}
+	eng := New(contract)
+
+	content := eng.buildChildContentWithRules(contract.Rules)
+
+	// @命运 必须出现在文件最顶部（角色名之前）
+	if !strings.HasPrefix(content, "@命运\n理想国 / 乌托邦线\n\n【角色名】") {
+		t.Errorf("序列化结果应以 @命运 开头，实际:\n%s", content)
+	}
+}
+
+// TestBuildChildContentNoBranchTitle 验证无 BranchTitle 时不输出 @命运 区块。
+func TestBuildChildContentNoBranchTitle(t *testing.T) {
+	contract := &domain.Contract{
+		RoleName: "浮士德",
+		State:    []domain.StateItem{},
+		Rules:    []*domain.Rule{},
+	}
+	eng := New(contract)
+
+	content := eng.buildChildContentWithRules(contract.Rules)
+
+	if strings.Contains(content, "@命运") {
+		t.Errorf("无 BranchTitle 时不应输出 @命运 区块，实际:\n%s", content)
+	}
+}
+
+// TestBuildChildContentStringStateQuoted 验证状态字符串值序列化时加引号（对齐 Flutter）。
+func TestBuildChildContentStringStateQuoted(t *testing.T) {
+	contract := &domain.Contract{
+		RoleName: "浮士德",
+		State: []domain.StateItem{
+			{Key: "情绪", Value: domain.ParseStateValue("永不满足")},
+			{Key: "位置", Value: domain.ParseStateValue("书斋")},
+			{Key: "生命值", Value: domain.ParseStateValue("85")},
+			{Key: "启用", Value: domain.ParseStateValue("true")},
+		},
+		Rules: []*domain.Rule{},
+	}
+	eng := New(contract)
+
+	content := eng.buildChildContentWithRules(contract.Rules)
+
+	// 字符串值加引号（避免被解析为数字/布尔）
+	if !strings.Contains(content, "- 情绪: \"永不满足\"") {
+		t.Errorf("字符串状态应加引号输出，实际:\n%s", content)
+	}
+	if !strings.Contains(content, "- 位置: \"书斋\"") {
+		t.Errorf("字符串状态应加引号输出，实际:\n%s", content)
+	}
+	// 数字/布尔直接输出（不加引号）
+	if !strings.Contains(content, "- 生命值: 85") {
+		t.Errorf("数字状态不应加引号，实际:\n%s", content)
+	}
+	if !strings.Contains(content, "- 启用: true") {
+		t.Errorf("布尔状态不应加引号，实际:\n%s", content)
+	}
+}
+
+// TestBuildChildContentMemoryWeightPrefix 验证记忆序列化时补齐 [权重] 前缀（对齐 Flutter）。
+func TestBuildChildContentMemoryWeightPrefix(t *testing.T) {
+	contract := &domain.Contract{
+		RoleName: "浮士德",
+		Memories: []string{
+			"浮士德与梅菲斯特立下赌约",       // 无前缀 → 补齐 [3]
+			"[4] 浮士德在书斋研读古卷",     // 已有 [4] 前缀 → 原样保留
+		},
+		State: []domain.StateItem{},
+		Rules: []*domain.Rule{},
+	}
+	eng := New(contract)
+
+	content := eng.buildChildContentWithRules(contract.Rules)
+
+	// 无前缀记忆补齐默认 [3]；带前缀记忆原样保留
+	if !strings.Contains(content, "- [3] 浮士德与梅菲斯特立下赌约") {
+		t.Errorf("无前缀记忆应补齐 [3] 前缀，实际:\n%s", content)
+	}
+	if !strings.Contains(content, "- [4] 浮士德在书斋研读古卷") {
+		t.Errorf("带 [4] 前缀的记忆应原样保留，实际:\n%s", content)
+	}
+}
+
 func TestEngineDefaultResponse(t *testing.T) {
 	contract := &domain.Contract{
 		RoleName: "浮士德",

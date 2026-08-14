@@ -136,6 +136,20 @@ func parseKeyValue(lines []Line, blockName string) ([]domain.StateItem, error) {
 // 各区块解析函数
 // ============================================================
 
+// parsePlainText 解析纯文本系统区块（如 `@命运`）：取首行非空内容作为值；无内容返回空字符串。
+//
+// 与 Flutter meph_parser.dart 的 _parsePlainText 对齐。
+func parsePlainText(lines []Line) string {
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line.Text)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		return trimmed
+	}
+	return ""
+}
+
 // parseRoleName 解析【角色名】区块。
 // 格式：单行文本，取第一行非空内容。
 //
@@ -173,11 +187,19 @@ func parseTextBlock(lines []Line) string {
 }
 
 // parsePlainList 解析纯文本列表（【记忆】）。
-// 格式：
+//
+// 格式（与 Flutter meph_parser.dart 的 _parsePlainList 对齐）：
 //   - 条目1
 //   - 条目2
+//   - [4] 带权重前缀的条目
 //
 // 不解析键值对，整行内容作为字符串值。
+//
+// 记忆条目前缀（极简设计，方案 B：仅提取内容，不保存权重）：
+//   - `[权重] 内容`（如 `[4] 浮士德与梅菲斯特立下赌约`）→ 提取 `]` 后的内容
+//     作为记忆条目（权重值内部忽略，保留前缀仅供 Flutter 版/编辑器兼容）
+//   - 无前缀的旧格式条目 → 原样保留
+//
 // 记忆是系统区块，由程序自动生成，但解析器保留读取能力（用于加载子版）。
 func parsePlainList(lines []Line, blockName string) ([]string, error) {
 	entries, err := scanEntries(lines, blockName)
@@ -187,9 +209,26 @@ func parsePlainList(lines []Line, blockName string) ([]string, error) {
 
 	result := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		result = append(result, entry.Raw)
+		result = append(result, stripMemoryWeightPrefix(entry.Raw))
 	}
 	return result, nil
+}
+
+// memoryWeightPrefixPattern 匹配记忆条目开头的 `[权重] ` 前缀（如 `[4] `）。
+//
+// 权重为 1-5 的单个数字（与 Flutter 版 Memory.maxImportance=5 对齐）。
+// 方案 B：CLI 内部不保存权重值，仅提取 `]` 之后的内容作为记忆条目。
+var memoryWeightPrefixPattern = regexp.MustCompile(`^\[\d\]\s+(.+)$`)
+
+// stripMemoryWeightPrefix 从记忆条目中提取「去掉 [权重] 前缀后的内容」。
+//
+// 带 `[权重] ` 前缀：返回 `]` 之后的内容（如 `[4] 记忆内容` → `记忆内容`）。
+// 无前缀/无法识别前缀：原样返回（向后兼容旧格式）。
+func stripMemoryWeightPrefix(raw string) string {
+	if m := memoryWeightPrefixPattern.FindStringSubmatch(raw); m != nil {
+		return m[1]
+	}
+	return raw
 }
 
 // parseRules 解析【规则】区块。
@@ -449,6 +488,8 @@ func parseBlocks(blocks []Block) (*domain.Contract, error) {
 				return nil, err
 			}
 			contract.Memories = value
+		case "@命运":
+			contract.BranchTitle = parsePlainText(block.Content)
 		case "历史":
 			value, err := parseHistory(block.Content, block.Title)
 			if err != nil {

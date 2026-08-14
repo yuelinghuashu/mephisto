@@ -5,7 +5,45 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [v1.1.0] — 2026-08-05
+## [v1.2.0] — 2026-08-14
+
+### 🏗️ 解析器对齐 Flutter 版
+
+- **新增 `@命运` 系统保留区块**（对齐 Flutter meph_lexer.dart）：`blockTitle` 支持 `@` 前缀系统区块；`knownBlocks` 白名单增加 `@命运`；`parseBlocks` 解析到 `Contract.BranchTitle`（json tag: `branch_title,omitempty`）
+- **记忆支持 `[权重] ` 前缀**（方案 B：仅提取内容，不保存权重）：`parsePlainList` 升级为解析带 `[4] 记忆内容` 格式的条目，无前缀旧格式完全兼容
+- **复合运算符空格校验修复**：`spacedCompoundOperatorPattern` 增加排除 `==` 的逻辑，避免 `状态.x == "值"` 被误报（对齐 Flutter meph_dsl.dart）
+- **序列化对齐 Flutter**：
+  - `@命运` 区块输出在文件最顶部（若 `Contract.BranchTitle` 非空）
+  - 状态序列化时字符串值加引号（避免被解析为数字/布尔）
+  - 记忆序列化统一补齐 `[权重] ` 前缀（无前缀记忆输出 `[3] `，与 Flutter 默认权重一致）
+
+### 🐛 代码优化与修复
+
+- **`executeInject` 占位符替换完整化**：改用 `shared.BuildPlaceholderVars` 构建变量映射（角色名 + 所有状态键），修复 `状态.位置` 等动态占位符无法替换的问题
+- **`equalValue` 布尔值解析对齐**：改为只接受 `"true"`/`"false"`（大小写不敏感），与 `ParseStateValue` 行为一致；修复 `状态.键 == "1"` 被误判为布尔的问题
+- **`evalStateCondition` 操作符定位修复**：取所有操作符中最靠左的匹配位置，修复值字符串中包含操作符字符时的错误分割（如 `状态.情绪 == "a>b"`）
+- **`setState` 引号处理统一**：改用 `domain.Unquote` 同时支持单双引号，修复单引号值无法正确剥离的问题
+- **流式输出性能优化**（`session.go`）：`handleInput` 的逐字符 `fmt.Print` 改为累积到 `strings.Builder` 后一次性输出，减少大段中文输出时的系统调用
+- **热重载 Sleep 阻塞修复**（`session.go`）：`watchFileChanges` 中的 `time.Sleep` 改为 `time.After` + select 等待，及时响应 `stopWatch` 停止信号
+
+### 📝 数据文件更新
+
+- **`data/faust.meph` / `data/dantes.meph`**：契约模板重写为 2 空格缩进格式（与 Flutter 版一致），规则重构为状态机 + 骰子 + 互斥组 + 终局注入的全新体系：
+  - `faust.meph`：新增「情绪流转」「灵魂维系」「命运骰」「暗影缠身/烛火映心（互斥组）」「说出停留/灵魂归主（终局状态机）」
+  - `dantes.meph`：新增「复仇之火」「交锋」「棋局（骰子）」「代价」「放下/毁灭（互斥组）」「天平方正（终局注入）」
+- **`internal/core/integration/integration_test.go`**：集成测试同步更新，覆盖新版规则的全部 DSL 特性（状态机、互斥组、骰子、括号分组、终局注入），适配 2 空格缩进解析
+
+### 📝 文档
+
+- **`docs/SYNTAX.md`**：骰子表达式收敛为 `roll(1d2)` / `roll(1d100)`；新增 `@命运` 系统保留区块说明；新增记忆 `[权重]` 前缀说明；全局变量补充状态键占位符；自定义区块从「环境变量扩展」改为「草稿宽容策略」说明
+- **`docs/RULES.md`**：调试参数从 `-debug` 修正为 `--debug`
+- **`README.md` / `README.en.md`**：强化过渡版本声明（CLI 版作为 Flutter 版前身，不追求完全对齐）
+- **`docs/README.md`**：补充过渡版本说明
+
+---
+
+<details>
+<summary><strong>v1.1.0</strong> — 2026-08-05</summary>
 
 ### ⚠️ 破坏性变更
 
@@ -62,6 +100,8 @@
 - **`help.go` 更新**：新增「约定」章节说明 `-<字母>` 短选项与 `--<单词>` 长选项的用法，所有示例统一为 `--` 风格
 - **`README.md` / `README.en.md` 更新**：CLI 选项章节同步更新，补充 `-`/`--` 使用约定与 `MEPHISTO_QUIET` 环境变量
 - **`docs/RULES.md` 更新**：补充括号分组语法说明，调整骰子描述为 `1d2` / `1d100`
+
+</details>
 
 ---
 

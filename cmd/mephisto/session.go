@@ -195,7 +195,17 @@ func (s *Session) watchFileChanges() {
 				continue
 			}
 			lastEvent = time.Now()
-			time.Sleep(50 * time.Millisecond) // 等待文件写入完成
+
+			// 等待文件写入完成（最多 100ms）：
+			// 修复：之前用 time.Sleep 直接阻塞 select，若期间收到 stopWatch
+			// 信号会延迟最多 50ms 才退出。现在用定时器 + select 等待，
+			// 能及时响应停止信号。
+			select {
+			case <-time.After(50 * time.Millisecond):
+				// 文件写入等待完成，继续
+			case <-s.stopWatch:
+				return
+			}
 
 			if err := s.engine.ReloadContract(s.childPath); err != nil {
 				fmt.Printf("\n⚠️ 规则热重载失败: %v\n", err)
@@ -372,21 +382,28 @@ func (s *Session) handleInput(input string) {
 	needIndent := true
 	inParagraph := false
 
+	// 流式输出优化：先构建到 builder，再一次性输出整块 chunk。
+	// 修复：之前 `for _, ch := range chunk` 对每个 rune 单独 fmt.Print，
+	// 大段中文输出时产生大量系统调用。现在逻辑不变但结果累积到
+	// strings.Builder，每块只做一次系统调用。
 	onChunk := func(chunk string) {
+		var sb strings.Builder
+		sb.Grow(len(chunk) + len(indent))
 		for _, ch := range chunk {
 			if ch == '\n' {
-				fmt.Println()
+				sb.WriteByte('\n')
 				needIndent = true
 				inParagraph = false
 			} else {
 				if !inParagraph && needIndent {
-					fmt.Print(indent)
+					sb.WriteString(indent)
 					needIndent = false
 				}
-				fmt.Print(string(ch))
+				sb.WriteRune(ch)
 				inParagraph = true
 			}
 		}
+		fmt.Print(sb.String())
 	}
 
 	// ---- 执行引擎（内部自动处理记忆提取） ----
