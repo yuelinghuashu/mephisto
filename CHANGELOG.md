@@ -5,6 +5,24 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [v1.2.1] — 2026-08-30
+
+### 🏗️ 引擎对齐 Flutter 版
+
+- **未知区块并入文本区块**（对齐 Flutter `_mergeUnknownIntoText`）：散文区块（世界观/角色背景/开局场景）中出现的一行 `【传说】` 会被 Lexer 切为未知区块——此前静默忽略导致其后全部文本丢失；现把标题行 + 内容行并入前一文本区块，用户散文原样不丢。结构化区块（规则/记忆/历史等）后的未知区块仍忽略（避免脏行混入结构化解析）
+- **记忆权重驱动注入排序与压缩保护**（对齐 Flutter `MemoryManager`，零侵入数据模型）：
+  - 新增 `shared.MemoryImportance`：解析 `[N] 内容` 前缀（clamp 1-5，无前缀默认 3，与 Flutter `Memory.importance` 对齐）
+  - **注入排序**：`BuildPrompt` 按权重降序排序记忆（高权重/人设核心优先被模型看到）
+  - **注入裁剪**：`ClipMemories` 高权重（≥4）全部保留 + 其余按权重降序补足上限（高权重优先超限是有意设计，容量保护由压缩承担）
+  - **压缩保护**：`CompressMemories` 高权重记忆（≥4）默认永不参与压缩；超过 `HighImportanceCap`（15）时最低权重核心记忆降级参与压缩（防无限膨胀）
+
+### 🐛 测试
+
+- **集成测试对齐新模板语义**：faust.meph 的「灵魂维系」规则已按 Flutter 反模式 4/9 修复（纯阈值规则绑定语境词）——测试同步更新：普通对话「你好」不再无条件拉回 30（保持可跌入深渊），濒死语境才触发
+- 新增测试：`MemoryImportance` 权重解析（含越界 clamp）、`SortMemoriesByImportance` 稳定排序、`ClipMemories` 高权重裁剪、`CompressMemories` 高权重保护、未知区块并入文本区块
+
+---
+
 ## [v1.2.0] — 2026-08-14
 
 ### 🏗️ 解析器对齐 Flutter 版

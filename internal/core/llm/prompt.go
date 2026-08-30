@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"mephisto/internal/domain"
+	"mephisto/internal/shared"
 )
 
 // PromptTemplate 是 Prompt 模板的结构定义。
@@ -77,7 +78,11 @@ func LoadConstraints(path string) (string, error) {
 // 关键设计：currentState 和 currentMemories 是独立参数，而非从 contract 中读取。
 // 原因：contract.State 和 contract.Memories 是契约初始值，引擎运行过程中会变化，
 // LLM 需要感知的是当前值（如堕落指数从 50 变为 85），而非初始值。
-func BuildPrompt(contract *domain.Contract, currentState map[string]any, history []domain.HistoryEntry, currentMemories []string, input string, constraints string) string {
+//
+// 记忆注入策略（对齐 Flutter system_prompt.dart）：
+//   - 按权重降序排序（高权重/人设核心优先被模型看到）
+//   - maxMemories > 0 时按权重裁剪：高权重必带 + 其余降序补足上限
+func BuildPrompt(contract *domain.Contract, currentState map[string]any, history []domain.HistoryEntry, currentMemories []string, input string, constraints string, maxMemories int) string {
 	if constraints == "" {
 		constraints = NarrativeConstraints
 	}
@@ -85,6 +90,11 @@ func BuildPrompt(contract *domain.Contract, currentState map[string]any, history
 	memories := currentMemories
 	if memories == nil {
 		memories = []string{}
+	}
+	// 记忆注入排序 + 裁剪（对齐 Flutter MemoryManager 语义）
+	memories = shared.SortMemoriesByImportance(memories)
+	if maxMemories > 0 {
+		memories = shared.ClipMemories(memories, maxMemories)
 	}
 
 	return RenderPrompt(PromptTemplate{

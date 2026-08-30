@@ -25,10 +25,12 @@ package engine
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"mephisto/internal/core/llm"
 	"mephisto/internal/domain"
+	"mephisto/internal/shared"
 )
 
 // ============================================================
@@ -125,11 +127,13 @@ func ExtractMemories(ctx context.Context, history []domain.HistoryEntry, existin
 
 // CompressMemories 压缩记忆列表。
 //
-// 压缩策略：
-//   - 将除了最近 CompressRetain 条之外的所有记忆进行压缩
-//   - 压缩结果为 3-5 条摘要
-//   - 保留最近 CompressRetain 条记忆不变
-//   - 最终结果 = 压缩摘要 + 最近 CompressRetain 条
+// 压缩策略（对齐 Flutter MemoryManager.compress 的高权重保护）：
+//   - **高权重记忆（≥ [shared.HighImportanceThreshold]=4）默认永不参与压缩**——
+//     人设核心/重大事件即使超限也不丢弃
+//   - 核心记忆超过 [shared.HighImportanceCap]=15 时，把「最低权重的高权重记忆」
+//     降级为可压缩（保护数量合理性，防无限膨胀）
+//   - 其余低权重记忆：压缩为 3-5 条摘要
+//   - 保留最近 CompressRetain 条记忆不变（含压缩后的摘要）
 //
 // 参数：
 //   - ctx: 上下文（用于超时控制）
@@ -145,9 +149,48 @@ func CompressMemories(ctx context.Context, memories []string, llmClient llm.Clie
 		return memories, nil
 	}
 
-	// 分离：需要压缩的部分 + 保留的最近 N 条
-	toCompress := memories[:len(memories)-cfg.CompressRetain]
-	recent := memories[len(memories)-cfg.CompressRetain:]
+	// ---- 高权重保护：核心记忆默认不参与压缩，超过上限时最低权重降级 ----
+	// 对齐 Flutter：high 按权重升序排序（最低优先降级），超过 HighImportanceCap
+	// 时保留权重最高的 HighImportanceCap 条，其余降级为可压缩。
+	var high []string
+	var downgraded []string
+	for _, m := range memories {
+		if shared.MemoryImportance(m) >= shared.HighImportanceThreshold {
+			high = append(high, m)
+		}
+	}
+	// 按权重升序排序（最低权重核心记忆优先降级）
+	sort.SliceStable(high, func(i, j int) bool {
+		return shared.MemoryImportance(high[i]) < shared.MemoryImportance(high[j])
+	})
+	if len(high) > shared.HighImportanceCap {
+		protectedHigh := high[len(high)-shared.HighImportanceCap:]
+		downgraded = append(downgraded, high[:len(high)-shared.HighImportanceCap]...)
+		high = protectedHigh
+	}
+
+	// 可压缩集合 = 降级的高权重 + 非高权重记忆
+	var compressible []string
+	compressible = append(compressible, downgraded...)
+	for _, m := range memories {
+		if shared.MemoryImportance(m) < shared.HighImportanceThreshold {
+			compressible = append(compressible, m)
+		}
+	}
+	if len(compressible) == 0 {
+		return high, nil
+	}
+
+	// 可压缩部分：保留最近 CompressRetain 条，其余交给 LLM 压缩
+	toCompress := compressible
+	recent := []string{}
+	if len(compressible) > cfg.CompressRetain {
+		recent = compressible[len(compressible)-cfg.CompressRetain:]
+		toCompress = compressible[:len(compressible)-cfg.CompressRetain]
+	}
+	if len(toCompress) == 0 {
+		return append(append([]string{}, high...), recent...), nil
+	}
 
 	prompt := buildCompressPrompt(toCompress)
 
@@ -163,7 +206,7 @@ func CompressMemories(ctx context.Context, memories []string, llmClient llm.Clie
 		return memories, nil
 	}
 
-	return append(summary, recent...), nil
+	return append(append(summary, recent...), high...), nil
 }
 
 // ============================================================

@@ -51,7 +51,8 @@ func TestFullIntegration(t *testing.T) {
 		}
 	})
 
-	// 灵魂维系规则（状态机：灵魂完整度 <= 25 → 重置为 30）
+	// 灵魂维系规则（状态机：灵魂完整度 <= 25 且表达濒死语境 → 重置为 30）
+	// 对齐 Flutter 反模式 4/9 修复：纯阈值规则必须绑定语境词（普通对话不再无条件拉回）
 	t.Run("触发灵魂维系", func(t *testing.T) {
 		// 修改契约初始状态：灵魂完整度设为 20（触发灵魂维系条件）
 		modified := *contract // 浅拷贝避免影响其他子测试
@@ -62,13 +63,23 @@ func TestFullIntegration(t *testing.T) {
 				modified.State[i] = domain.StateItem{Key: "灵魂完整度", Value: domain.ParseStateValue("20")}
 			}
 		}
+		// 普通对话（无濒死语境）：不再无条件拉回（反模式 4 修复）
 		eng := engine.New(&modified)
 		if _, err := eng.Run("你好", nil); err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
 		state := eng.State()
+		if state["灵魂完整度"] != 20 {
+			t.Errorf("普通对话不应触发灵魂维系：灵魂完整度 = %v, want 20（保持可跌入深渊）", state["灵魂完整度"])
+		}
+		// 濒死语境：契约拉回 30
+		eng2 := engine.New(&modified)
+		if _, err := eng2.Run("我感觉灵魂快要消散了", nil); err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+		state = eng2.State()
 		if state["灵魂完整度"] != 30 {
-			t.Errorf("灵魂完整度 = %v, want 30", state["灵魂完整度"])
+			t.Errorf("濒死语境应触发灵魂维系：灵魂完整度 = %v, want 30", state["灵魂完整度"])
 		}
 	})
 

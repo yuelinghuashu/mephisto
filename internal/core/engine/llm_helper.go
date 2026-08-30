@@ -54,6 +54,7 @@ func callLLM(input, instruction string, runtime *Runtime, llmClient llm.Client, 
 	}
 
 	// 构建 Prompt（使用运行时的记忆，而非契约初始值）
+	// maxMemories=0 表示不裁剪（CLI 无上下文窗口配置；排序始终生效）
 	prompt := llm.BuildPrompt(
 		runtime.Contract(),
 		runtime.State(),
@@ -61,6 +62,7 @@ func callLLM(input, instruction string, runtime *Runtime, llmClient llm.Client, 
 		runtime.Memories(),
 		combinedInput,
 		constraints,
+		0,
 	)
 
 	// 带超时的上下文：防止 LLM API 挂起无限等待

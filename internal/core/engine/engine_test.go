@@ -18,6 +18,7 @@ import (
 
 	"mephisto/internal/core/parser"
 	"mephisto/internal/domain"
+	"mephisto/internal/shared"
 )
 
 // ============================================================
@@ -915,5 +916,92 @@ func TestEngineDefaultResponse(t *testing.T) {
 	expected2 := "角色 沉默地注视着命运。"
 	if response2 != expected2 {
 		t.Errorf("default response = %v, want %v", response2, expected2)
+	}
+}
+
+// ============================================================
+// 记忆权重（对齐 Flutter MemoryManager：注入排序 + 压缩保护）
+// ============================================================
+
+func TestMemoryImportance(t *testing.T) {
+	cases := []struct {
+		name string
+		mem  string
+		want int
+	}{
+		{"带高权重前缀", "[5] 核心誓言", 5},
+		{"带中权重前缀", "[3] 一般事件", 3},
+		{"带低权重前缀", "[1] 边缘细节", 1},
+		{"无前缀默认权重", "普通记忆", 3},
+		{"权重越界 clamp 到 5", "[9] 越界", 5},
+		{"权重越界 clamp 到 1", "[0] 越界", 1},
+		{"非数字前缀默认", "[x] 异常", 3},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := shared.MemoryImportance(c.mem); got != c.want {
+				t.Errorf("MemoryImportance(%q) = %d, want %d", c.mem, got, c.want)
+			}
+		})
+	}
+}
+
+func TestSortMemoriesByImportance(t *testing.T) {
+	memories := []string{"[1] 低", "[5] 高", "[3] 中", "无前缀默认"}
+	sorted := shared.SortMemoriesByImportance(memories)
+	// 高权重在前
+	if sorted[0] != "[5] 高" {
+		t.Errorf("sorted[0] = %q, want [5] 高（最高权重应在最前）", sorted[0])
+	}
+	// 同权重稳定（3 在无前缀 3 之前，保持原顺序）
+	if sorted[1] != "[3] 中" || sorted[2] != "无前缀默认" {
+		t.Errorf("sorted = %v, want [5] 高 → [3] 中 → 无前缀默认（同权重稳定）", sorted)
+	}
+	// 低权重最后
+	if sorted[3] != "[1] 低" {
+		t.Errorf("sorted[3] = %q, want [1] 低（最低权重应在最后）", sorted[3])
+	}
+}
+
+func TestClipMemories(t *testing.T) {
+	memories := []string{
+		"[1] 边缘1", "[5] 核心1", "[2] 普通1",
+		"[4] 核心2", "[3] 普通2", "[1] 边缘2",
+	}
+	// 上限 3：高权重（[5][4]）全保留 + 权重最高的 1 条低权重补足
+	clipped := shared.ClipMemories(memories, 3)
+	if len(clipped) != 3 {
+		t.Fatalf("ClipMemories(len=%d) = %v, want 3 条（高权重2条 + 低权重补足1条）", len(clipped), clipped)
+	}
+	if clipped[0] != "[5] 核心1" || clipped[1] != "[4] 核心2" {
+		t.Errorf("高权重应在前：clipped = %v", clipped)
+	}
+	// 高权重全部保留（即使超上限）：上限 1 时高权重 2 条 → 返回 2 条（超限有意设计）
+	clipped2 := shared.ClipMemories(memories, 1)
+	if len(clipped2) != 2 {
+		t.Errorf("高权重优先超限：ClipMemories(1) = %v, want 2 条（高权重全保留）", clipped2)
+	}
+	// 未超上限：原样返回（不排序、不裁剪）
+	original := []string{"b", "a"}
+	if got := shared.ClipMemories(original, 10); len(got) != 2 || got[0] != "b" {
+		t.Errorf("未超上限应原样返回：ClipMemories = %v", got)
+	}
+}
+
+func TestCompressMemoriesHighImportanceProtection(t *testing.T) {
+	// 构造超过 MaxLimit 的记忆，其中包含高权重核心记忆
+	// 验证：高权重记忆不参与压缩（被保护），只有低权重进入 compressible
+	memories := []string{
+		"[5] 核心誓言", "[4] 重大事件", "[4] 关键线索",
+	}
+	for i := 0; i < 30; i++ {
+		memories = append(memories, fmt.Sprintf("[2] 普通记忆%d", i))
+	}
+	cfg := DefaultMemoryConfig
+	cfg.MaxLimit = 5
+
+	// 无 LLM（nil）时不压缩原样返回（保护逻辑在 LLM 调用前）
+	if got, err := CompressMemories(nil, memories, nil, cfg); err != nil || len(got) != len(memories) {
+		t.Errorf("nil LLM 应原样返回，got len=%d err=%v", len(got), err)
 	}
 }

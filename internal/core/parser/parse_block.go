@@ -186,6 +186,20 @@ func parseTextBlock(lines []Line) string {
 	return sb.String()
 }
 
+// mergeUnknownIntoText 将未知区块合并为文本行（标题行 + 原内容行），
+// 供并入前一个文本型区块（对齐 Flutter meph_parser.dart 的 _mergeUnknownIntoText）。
+//
+// 标题行以 `【标题】` 形式保留在文本中——它本来就是用户散文的一部分。
+func mergeUnknownIntoText(block Block) string {
+	var sb strings.Builder
+	sb.WriteString("【" + block.Title + "】")
+	for _, line := range block.Content {
+		sb.WriteByte('\n')
+		sb.WriteString(line.Text)
+	}
+	return sb.String()
+}
+
 // parsePlainList 解析纯文本列表（【记忆】）。
 //
 // 格式（与 Flutter meph_parser.dart 的 _parsePlainList 对齐）：
@@ -439,6 +453,12 @@ func parseBlocks(blocks []Block) (*domain.Contract, error) {
 	}
 
 	seenBlocks := make(map[string]struct{})
+	// 最近处理的「文本型区块」类型（世界观 / 角色背景 / 开局场景 / 空）。
+	// 用于未知区块的内容归并（对齐 Flutter meph_parser.dart 的
+	// _mergeUnknownIntoText）：散文区块中的一行 `【传说】` 会被 Lexer 切为
+	// 未知区块，若静默忽略，其后的全部文本会从世界观/背景/开局场景中丢失。
+	// 归并后保留标题行 + 内容行，用户散文原样不丢。
+	lastTextBlock := ""
 
 	for _, block := range blocks {
 		// 检测重复区块
@@ -458,49 +478,73 @@ func parseBlocks(blocks []Block) (*domain.Contract, error) {
 				return nil, err
 			}
 			contract.RoleName = value
+			lastTextBlock = ""
 		case "锚点":
 			value, err := parseKeyValue(block.Content, block.Title)
 			if err != nil {
 				return nil, err
 			}
 			contract.Anchor = value
+			lastTextBlock = ""
 		case "世界观":
 			contract.Worldview = parseTextBlock(block.Content)
+			lastTextBlock = "世界观"
 		case "角色背景":
 			contract.Background = parseTextBlock(block.Content)
+			lastTextBlock = "角色背景"
 		case "开局场景":
 			contract.Opening = parseTextBlock(block.Content)
+			lastTextBlock = "开局场景"
 		case "状态":
 			value, err := parseKeyValue(block.Content, block.Title)
 			if err != nil {
 				return nil, err
 			}
 			contract.State = value
+			lastTextBlock = ""
 		case "规则":
 			value, err := parseRules(block.Content, block.Title)
 			if err != nil {
 				return nil, err
 			}
 			contract.Rules = value
+			lastTextBlock = ""
 		case "记忆":
 			value, err := parsePlainList(block.Content, block.Title)
 			if err != nil {
 				return nil, err
 			}
 			contract.Memories = value
+			lastTextBlock = ""
 		case "@命运":
 			contract.BranchTitle = parsePlainText(block.Content)
+			lastTextBlock = ""
 		case "历史":
 			value, err := parseHistory(block.Content, block.Title)
 			if err != nil {
 				return nil, err
 			}
 			contract.History = value
+			lastTextBlock = ""
 		default:
-			// 自定义区块：静默忽略（草稿宽容策略）
-			// 未知区块（如【草稿】【设定集】）被 Lexer 切分但标记 IsKnown=false，
-			// 这里直接跳过不产生任何数据，方便用户书写备忘/草稿。
-			continue
+			// 未知区块（用户草稿/备忘）：静默忽略（草稿宽容）。
+			// 例外：紧跟在文本型区块之后时，把标题行 + 内容行**并入**该区块
+			// 文本——散文正文中出现的一行 `【xxx】` 不应导致其后内容丢失
+			// （对齐 Flutter _mergeUnknownIntoText）。
+			// 结构化区块（规则/记忆/历史等）后的未知区块仍忽略（避免脏行
+			// 混入结构化解析导致误报）。
+			if lastTextBlock != "" {
+				merged := mergeUnknownIntoText(block)
+				switch lastTextBlock {
+				case "世界观":
+					contract.Worldview += "\n" + merged
+				case "角色背景":
+					contract.Background += "\n" + merged
+				default:
+					contract.Opening += "\n" + merged
+				}
+				// lastTextBlock 保持不变：后续未知区块继续并入同一文本区块
+			}
 		}
 	}
 	

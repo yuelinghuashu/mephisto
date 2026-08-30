@@ -714,3 +714,65 @@ func TestParseTextBlock(t *testing.T) {
 		t.Errorf("parseTextBlock() 期望 '%s'，实际 '%s'", want, got)
 	}
 }
+
+// TestParseUnknownBlockMergedIntoText 验证未知区块并入前一文本区块。
+//
+// 对齐 Flutter _mergeUnknownIntoText：散文区块中的一行 `【传说】` 会被
+// Lexer 切为未知区块，若静默忽略其后的全部文本会从世界观中丢失——
+// 归并后保留标题行 + 内容行。
+func TestParseUnknownBlockMergedIntoText(t *testing.T) {
+	content := `【角色名】
+  测试角色
+
+【世界观】
+  世界设定第一行。
+【传说】
+  传说中的故事内容。
+  第二行故事内容。
+
+【角色背景】
+  角色背景内容。
+`
+	contract, err := ParseString(content)
+	if err != nil {
+		t.Fatalf("ParseString() error = %v", err)
+	}
+	if !strings.Contains(contract.Worldview, "【传说】") {
+		t.Errorf("Worldview 应包含未知区块标题【传说】：%q", contract.Worldview)
+	}
+	if !strings.Contains(contract.Worldview, "传说中的故事内容。") {
+		t.Errorf("Worldview 应包含未知区块内容（不丢失）：%q", contract.Worldview)
+	}
+	if !strings.Contains(contract.Worldview, "第二行故事内容。") {
+		t.Errorf("Worldview 应包含未知区块后续行（不丢失）：%q", contract.Worldview)
+	}
+	// 角色背景不受影响（parseTextBlock 保留原始换行）
+	if !strings.Contains(contract.Background, "角色背景内容。") {
+		t.Errorf("Background = %q, want 含 角色背景内容。", contract.Background)
+	}
+}
+
+// TestParseUnknownBlockAfterStructuredIgnored 验证结构化区块后的未知区块仍忽略。
+//
+// 规则/记忆/历史等结构化区块后的未知区块不并入（避免脏行混入结构化解析）。
+func TestParseUnknownBlockAfterStructuredIgnored(t *testing.T) {
+	content := `【角色名】
+  测试角色
+
+【规则】
+  [测试] if 包含 "x" -> 注入 "y"
+
+【草稿】
+  备忘内容。
+`
+	contract, err := ParseString(content)
+	if err != nil {
+		t.Fatalf("ParseString() error = %v", err)
+	}
+	if len(contract.Rules) != 1 {
+		t.Errorf("Rules = %d, want 1", len(contract.Rules))
+	}
+	if strings.Contains(contract.Worldview, "备忘") {
+		t.Errorf("结构化区块后的未知区块不应并入：Worldview = %q", contract.Worldview)
+	}
+}
