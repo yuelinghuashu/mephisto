@@ -13,8 +13,8 @@ import (
 
 // 版本信息（构建时注入）
 var (
-	Version   = "v1.1.0"
-	BuildTime = "2026-08-05"
+	Version   = "v1.2.1"
+	BuildTime = "2026-08-30"
 )
 
 // printVersion 打印版本信息

@@ -23,7 +23,7 @@
 
 ---
 
-## [v1.2.0] — 2026-08-14
+<details><summary>## [v1.2.0] — 2026-08-14</summary>
 
 ### 🏗️ 解析器对齐 Flutter 版
 
@@ -58,10 +58,12 @@
 - **`README.md` / `README.en.md`**：强化过渡版本声明（CLI 版作为 Flutter 版前身，不追求完全对齐）
 - **`docs/README.md`**：补充过渡版本说明
 
+</details>
+
 ---
 
 <details>
-<summary><strong>v1.1.0</strong> — 2026-08-05</summary>
+<summary>v1.1.0 — 2026-08-05</summary>
 
 ### ⚠️ 破坏性变更
 
@@ -124,7 +126,7 @@
 ---
 
 <details>
-<summary><strong>v1.0.3</strong> — 2026-07-25</summary>
+<summary>v1.0.3 — 2026-07-25</summary>
 
 ### 🚀 新特性
 
@@ -148,7 +150,7 @@
 ---
 
 <details>
-<summary><strong>v1.0.2</strong> — 2026-07-24</summary>
+<summary>v1.0.2 — 2026-07-24</summary>
 
 ### 🚀 新特性
 
@@ -184,7 +186,7 @@
 ---
 
 <details>
-<summary><strong>v1.0.1</strong> — 2026-07-21</summary>
+<summary>v1.0.1 — 2026-07-21</summary>
 
 ### 🐛 修复
 
@@ -224,7 +226,7 @@
 ---
 
 <details>
-<summary><strong>v1.0.0</strong> — 2026-07-21</summary>
+<summary>v1.0.0 — 2026-07-21</summary>
 
 ### 🎯 正式稳定版发布
 
@@ -289,7 +291,7 @@
 ---
 
 <details>
-<summary><strong>v0.5.0</strong> — 2026-07-19</summary>
+<summary>v0.5.0 — 2026-07-19</summary>
 
 ### 🏗️ 架构重构
 
@@ -437,7 +439,7 @@
 ---
 
 <details>
-<summary><strong>v0.4.0</strong> — 2026-07-17</summary>
+<summary>v0.4.0 — 2026-07-17</summary>
 
 ### ✨ 新增
 
@@ -495,7 +497,7 @@
 ---
 
 <details>
-<summary><strong>v0.3.0</strong> — 2026-07-16</summary>
+<summary>v0.3.0 — 2026-07-16</summary>
 
 ### ✨ 新增
 
@@ -567,7 +569,7 @@
 ---
 
 <details>
-<summary><strong>v0.2.1</strong> — 2026-07-16</summary>
+<summary>v0.2.1 — 2026-07-16</summary>
 
 ### 🧹 优化
 
@@ -594,7 +596,7 @@
 ---
 
 <details>
-<summary><strong>v0.2.0</strong> — 2026-07-15</summary>
+<summary>v0.2.0 — 2026-07-15</summary>
 
 ### ✨ 新增
 
@@ -649,7 +651,7 @@
 ---
 
 <details>
-<summary><strong>v0.1.0</strong> — 2026-07-15</summary>
+<summary>v0.1.0 — 2026-07-15</summary>
 
 ### 🎉 首次发布
 
